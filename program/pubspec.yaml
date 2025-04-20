@@ -1,51 +1,72 @@
-name: program
-description: "A new Flutter project."
+name: program # Sebaiknya ganti dengan nama yang lebih deskriptif, misal: jastip_app
+description: "Aplikasi Jasa Titip dengan Fitur Live Shopping (Skripsi)." # Deskripsi yang lebih jelas
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
+# ... (komentar bawaan tentang versioning tetap sama) ...
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.3
+  sdk: '>=3.0.0 <4.0.0' # Menggunakan Dart 3 atau lebih baru (sesuai permintaan sebelumnya)
 
 # Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package dependencies to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations: # Jika butuh dukungan multi-bahasa
+    sdk: flutter
 
+  # --- Firebase Core & Services ---
+  firebase_core: ^2.32.0      # Wajib untuk semua project Firebase
+  firebase_auth: ^4.20.0      # Untuk Autentikasi (Login, Register)
+  cloud_firestore: ^4.17.5    # Database NoSQL Firestore
+  firebase_storage: ^11.7.7     # Untuk menyimpan file (gambar/video)
+  firebase_messaging: ^14.9.4   # Untuk Push Notifications (FCM)
+  firebase_functions: ^4.8.3    # Untuk memanggil Cloud Functions
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  # --- State Management (Riverpod) ---
+  flutter_riverpod: ^2.5.1     # State management utama
+  riverpod_annotation: ^2.3.5  # (Opsional tapi direkomendasikan) Anotasi untuk code generation Riverpod
+
+  # --- Navigation ---
+  go_router: ^14.1.0          # (Direkomendasikan) Untuk routing terstruktur
+
+  # --- Networking ---
+  dio: ^5.4.3+1               # HTTP client untuk memanggil API
+
+  # --- Live Shopping (100ms) ---
+   # SDK resmi dari 100ms untuk Flutter (cek versi terbaru di dokumentasi 100ms)
+
+  # --- UI & Utilities ---
+  cupertino_icons: ^1.0.8     # Ikon standar iOS (sudah ada)
+  intl: ^0.19.0               # Untuk formatting (tanggal, angka, mata uang) & i18n
+  equatable: ^2.0.5           # Memudahkan perbandingan objek
+  image_picker: ^1.1.2        # Memilih gambar dari galeri/kamera
+  cached_network_image: ^3.3.1 # Menampilkan & cache gambar dari network
+  uuid: ^4.4.0                # Membuat ID unik
+  url_launcher: ^6.3.0        # Membuka URL eksternal
+
+  # --- Data Models & Immutability (Direkomendasikan) ---
+  freezed_annotation: ^2.4.1   # Anotasi untuk Freezed (code generation model/state)
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
-  flutter_lints: ^4.0.0
+  # --- Code Generation ---
+  build_runner: ^2.4.11        # Runner untuk menjalankan code generators
+  freezed: ^2.5.2              # Generator untuk membuat data class immutable (models, states)
+  riverpod_generator: ^2.4.0   # (Opsional tapi direkomendasikan) Generator untuk providers Riverpod
+  # go_router_builder: ^2.7.0  # Jika ingin generate route dari GoRouter (tambahkan jika perlu)
+
+  # --- Linting ---
+  # Paket ini mendorong praktik pengkodean yang baik.
+  flutter_lints: ^4.0.0       # Aturan linting standar (sudah ada)
+
+  # --- Testing ---
+  mocktail: ^1.0.3            # Framework mocking modern untuk testing
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -60,20 +81,11 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  #   - assets/images/logo.png # Contoh: Tambahkan folder assets Anda di sini nanti
+  #   - assets/icons/
+  #   - assets/fonts/
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
+  # ... (bagian fonts tetap sama) ...
   # fonts:
   #   - family: Schyler
   #     fonts:
@@ -85,6 +97,3 @@ flutter:
   #       - asset: fonts/TrajanPro.ttf
   #       - asset: fonts/TrajanPro_Bold.ttf
   #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package
