@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "134803561132",
-    "project_id": "tugas-akhir-2d7b1",
-    "storage_bucket": "tugas-akhir-2d7b1.firebasestorage.app"
+    "project_number": "730172618870",
+    "project_id": "ta-ngoper",
+    "storage_bucket": "ta-ngoper.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:134803561132:android:1d7610c6fa1f9c7d255d09",
+        "mobilesdk_app_id": "1:730172618870:android:ea8f7044c932a039f98757",
         "android_client_info": {
           "package_name": "tugas.akhir.ngoper"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAOBqYZZTTFywY7GFAD_FX2zRESIwIBKyc"
+          "current_key": "AIzaSyDOpFdGlZC3ZxryisOgHeZH6zW3VKWcXjw"
         }
       ],
       "services": {
