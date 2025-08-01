@@ -1,0 +1,2 @@
+D:/Tugas Akhir/Tugas-Akhir/program/android/app/.cxx/Debug/4o1z6nu2/x86/CMakeFiles/edit_cache.dir
+D:/Tugas Akhir/Tugas-Akhir/program/android/app/.cxx/Debug/4o1z6nu2/x86/CMakeFiles/rebuild_cache.dir

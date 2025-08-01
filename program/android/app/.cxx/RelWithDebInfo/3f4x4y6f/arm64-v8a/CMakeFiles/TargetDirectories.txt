@@ -1,0 +1,2 @@
+D:/Tugas Akhir/Tugas-Akhir/program/android/app/.cxx/RelWithDebInfo/3f4x4y6f/arm64-v8a/CMakeFiles/edit_cache.dir
+D:/Tugas Akhir/Tugas-Akhir/program/android/app/.cxx/RelWithDebInfo/3f4x4y6f/arm64-v8a/CMakeFiles/rebuild_cache.dir
