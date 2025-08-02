@@ -1,21 +1,41 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../../app/providers/firebase_providers.dart'; // Import provider firebase Anda
+import 'package:program/app/providers/firebase_providers.dart';
 
-// Provider ini akan menyediakan stream ke dokumen pengguna yang sedang login
-final userProfileStreamProvider = StreamProvider.autoDispose<DocumentSnapshot>((ref) {
-  // Dapatkan instance Firestore dan Auth dari provider global
+// Provider ini tetap sama, untuk data dasar profil
+final userProfileStreamProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, userId) {
   final firestore = ref.watch(firebaseFirestoreProvider);
-  final auth = ref.watch(firebaseAuthProvider);
+  return firestore.collection('users').doc(userId).snapshots();
+});
 
-  // Dapatkan pengguna yang sedang login
-  final user = auth.currentUser;
+// Provider BARU: Untuk mengambil semua postingan dari seorang pengguna
+final userPostsStreamProvider = StreamProvider.autoDispose.family<QuerySnapshot, String>((ref, userId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore
+      .collection('posts')
+      .where('userId', isEqualTo: userId)
+      .orderBy('createdAt', descending: true)
+      .snapshots();
+});
 
-  // Jika tidak ada pengguna yang login, kembalikan stream kosong
-  if (user == null) {
-    return Stream.error('Pengguna tidak ditemukan atau belum login.');
-  }
+// Provider BARU: Untuk menghitung jumlah pengikut (followers)
+final followersCountProvider = FutureProvider.autoDispose.family<int, String>((ref, userId) async {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  final snapshot = await firestore
+      .collection('users')
+      .doc(userId)
+      .collection('followers')
+      .get();
+  return snapshot.docs.length;
+});
 
-  // Jika ada, kembalikan stream ke dokumen pengguna di koleksi 'users'
-  return firestore.collection('users').doc(user.uid).snapshots();
+// Provider BARU: Untuk menghitung jumlah yang diikuti (following)
+final followingCountProvider = FutureProvider.autoDispose.family<int, String>((ref, userId) async {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  final snapshot = await firestore
+      .collection('users')
+      .doc(userId)
+      .collection('following')
+      .get();
+  return snapshot.docs.length;
 });
