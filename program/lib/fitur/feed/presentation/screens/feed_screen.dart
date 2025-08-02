@@ -27,7 +27,8 @@ class FeedScreen extends ConsumerWidget { // Gunakan ConsumerWidget untuk membac
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline),
             onPressed: () {
-              // TODO: Navigasi ke halaman Chat
+              // Navigasi ke halaman daftar chat
+              context.push('/chat-list');
             },
           ),
         ],

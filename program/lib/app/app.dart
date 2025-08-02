@@ -17,6 +17,7 @@ import 'package:program/fitur/profile/presentation/screens/profile_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/setup_live_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/jastiper_live_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/viewer_live_screen.dart';
+import 'package:program/fitur/chat/presentation/screens/chat_screens.dart';
 
 
 final goRouter = Provider<GoRouter>((ref) {
@@ -30,6 +31,22 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/create-post', builder: (context, state) => const CreatePostScreen()),
       GoRoute(path: '/jastiper-live', builder: (context, state) => const JastiperLiveScreen()),
       GoRoute(path: '/viewer-live', builder: (context, state) => const ViewerLiveScreen()),
+
+      GoRoute(
+        path: '/chat-list',
+        builder: (context, state) => const ChatListScreen(),
+      ),
+      // GoRoute(
+      //   path: '/chat/:userId',
+      //   builder: (context, state) {
+      //     final userId = state.pathParameters['userId']!;
+      //     final username = state.extra as String? ?? 'Chat';
+      //     return ChatScreen(
+      //       otherUserId: userId,
+      //       otherUsername: username,
+      //     );
+      //   },
+      // ),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---
       StatefulShellRoute.indexedStack(
