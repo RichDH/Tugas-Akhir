@@ -4,6 +4,9 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/profile/presentation/providers/profile_provider.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:program/fitur/profile/presentation/widgets/video_thumbnail_widget.dart'; // Import widget baru
+import 'package:intl/intl.dart'; // Import untuk format tanggal
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -20,6 +23,11 @@ class ProfileScreen extends ConsumerWidget {
     final userPostsAsync = ref.watch(userPostsStreamProvider(currentUserId));
     final followersCount = ref.watch(followersCountProvider(currentUserId)).value ?? 0;
     final followingCount = ref.watch(followingCountProvider(currentUserId)).value ?? 0;
+    final userRequestsAsync = ref.watch(userRequestsStreamProvider(currentUserId));
+    final userShortsAsync = ref.watch(userShortsStreamProvider(currentUserId));
+    final userLiveHistoryAsync = ref.watch(userLiveHistoryStreamProvider(currentUserId));
+    // Gabungkan jumlah post dan request untuk statistik
+    final totalPostsCount = (userPostsAsync.value?.docs.length ?? 0) + (userRequestsAsync.value?.docs.length ?? 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -55,7 +63,7 @@ class ProfileScreen extends ConsumerWidget {
                         context: context,
                         username: userData['username'] ?? 'Tanpa Nama',
                         email: userData['email'] ?? 'Tidak ada email',
-                        postsCount: userPostsAsync.value?.docs.length ?? 0,
+                        postsCount: totalPostsCount,
                         followersCount: followersCount,
                         followingCount: followingCount,
                       );
@@ -82,36 +90,52 @@ class ProfileScreen extends ConsumerWidget {
           },
           body: TabBarView(
             children: [
-              userPostsAsync.when(
-                data: (posts) {
-                  if (posts.docs.isEmpty) {
-                    return const Center(child: Text('Belum ada postingan.'));
-                  }
+              _buildGrid(asyncValue: userPostsAsync, emptyMessage: "Belum ada postingan jastip.", errorMessage: "Gagal memuat postingan."),
+              // PERBAIKAN: Konten Tab Request
+              _buildGrid(asyncValue: userRequestsAsync, emptyMessage: "Belum ada postingan request.", errorMessage: "Gagal memuat request."),
+              // PERBAIKAN: Konten Tab Shorts
+              userShortsAsync.when(
+                data: (snapshot) {
+                  if (snapshot.docs.isEmpty) return const Center(child: Text('Belum ada shorts.'));
                   return GridView.builder(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 2,
-                      mainAxisSpacing: 2,
-                    ),
-                    itemCount: posts.docs.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
+                    itemCount: snapshot.docs.length,
                     itemBuilder: (context, index) {
-                      final post = posts.docs[index].data() as Map<String, dynamic>;
-                      final imageUrls = post['imageUrls'] as List<dynamic>?;
-
-                      if (imageUrls == null || imageUrls.isEmpty) {
-                        return Container(color: Colors.grey.shade200, child: const Icon(Icons.image_not_supported));
-                      }
-
-                      return Image.network(imageUrls[0], fit: BoxFit.cover);
+                      final short = snapshot.docs[index].data() as Map<String, dynamic>;
+                      final videoUrl = short['videoUrl'] as String? ?? '';
+                      if (videoUrl.isEmpty) return const SizedBox.shrink();
+                      return VideoThumbnailWidget(videoUrl: videoUrl);
                     },
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, s) => const Center(child: Text('Gagal memuat post')),
+                error: (e, s) => const Center(child: Text('Gagal memuat shorts')),
               ),
-              const Center(child: Text('Halaman Request')),
-              const Center(child: Text('Halaman Shorts')),
-              const Center(child: Text('Halaman Live')),
+              // Konten Tab Live
+              userLiveHistoryAsync.when(
+                data: (lives) {
+                  if (lives.docs.isEmpty) return const Center(child: Text('Belum ada riwayat siaran.'));
+                  return ListView.builder(
+                    itemCount: lives.docs.length,
+                    itemBuilder: (context, index) {
+                      final live = lives.docs[index].data() as Map<String, dynamic>;
+                      final title = live['title'] ?? 'Live Shopping';
+                      final timestamp = live['createdAt'] as Timestamp?;
+                      final formattedDate = timestamp != null
+                          ? DateFormat('d MMM yyyy, HH:mm').format(timestamp.toDate())
+                          : 'Tanggal tidak tersedia';
+
+                      return ListTile(
+                        leading: const Icon(Icons.videocam_off_outlined),
+                        title: Text(title),
+                        subtitle: Text(formattedDate),
+                      );
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, s) => const Center(child: Text('Gagal memuat riwayat live')),
+              ),
             ],
           ),
         ),
@@ -119,6 +143,38 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildGrid({
+    required AsyncValue<QuerySnapshot> asyncValue,
+    required String emptyMessage,
+    required String errorMessage,
+  }) {
+    return asyncValue.when(
+      data: (snapshot) {
+        if (snapshot.docs.isEmpty) {
+          return Center(child: Text(emptyMessage));
+        }
+        return GridView.builder(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
+          itemCount: snapshot.docs.length,
+          itemBuilder: (context, index) {
+            final post = snapshot.docs[index].data() as Map<String, dynamic>;
+            final imageUrls = post['imageUrls'] as List<dynamic>?;
+            if (imageUrls == null || imageUrls.isEmpty) {
+              return Container(
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.image_not_supported));
+            }
+            return Image.network(imageUrls[0],
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => const Icon(Icons.error));
+          },
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, s) => Center(child: Text(errorMessage)),
+    );
+  }
   Widget _buildProfileHeader({
     required BuildContext context,
     required String username,
