@@ -13,6 +13,95 @@ final postRepositoryProvider = Provider<PostRepository>((ref) {
   return PostRepositoryImpl(firestore);
 });
 
+final postDetailStreamProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, postId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('posts').doc(postId).snapshots();
+});
+
+final userProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, userId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('users').doc(userId).snapshots();
+});
+
+final commentsStreamProvider =
+StreamProvider.autoDispose.family<QuerySnapshot, String>((ref, postId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore
+      .collection('posts')
+      .doc(postId)
+      .collection('comments')
+      .orderBy('timestamp', descending: true)
+      .snapshots();
+});
+
+// State Notifier untuk aksi-aksi pada post
+class PostNotifier extends StateNotifier<AsyncValue<void>> {
+  final Ref _ref;
+  PostNotifier(this._ref) : super(const AsyncData(null));
+
+  // Fungsi untuk like/unlike post
+  Future<void> toggleLike(String postId) async {
+    final firestore = _ref.read(firebaseFirestoreProvider);
+    final userId = _ref.read(firebaseAuthProvider).currentUser?.uid;
+    if (userId == null) return;
+
+    final postRef = firestore.collection('posts').doc(postId);
+
+    state = const AsyncLoading();
+    try {
+      final doc = await postRef.get();
+      final likes = List<String>.from(doc.data()?['likes'] ?? []);
+
+      if (likes.contains(userId)) {
+        // Jika sudah like, maka unlike
+        await postRef.update({
+          'likes': FieldValue.arrayRemove([userId])
+        });
+      } else {
+        // Jika belum like, maka like
+        await postRef.update({
+          'likes': FieldValue.arrayUnion([userId])
+        });
+      }
+      state = const AsyncData(null);
+    } catch (e) {
+      state = AsyncError(e, StackTrace.current);
+    }
+  }
+
+  // Fungsi untuk menambah komentar
+  Future<void> addComment(String postId, String text) async {
+    final firestore = _ref.read(firebaseFirestoreProvider);
+    final user = _ref.read(firebaseAuthProvider).currentUser;
+    if (user == null || text.trim().isEmpty) return;
+
+    // Ambil username dari koleksi 'users'
+    final userDoc = await firestore.collection('users').doc(user.uid).get();
+    final username = userDoc.data()?['username'] ?? 'User';
+
+    final commentData = {
+      'text': text.trim(),
+      'userId': user.uid,
+      'username': username,
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    state = const AsyncLoading();
+    try {
+      await firestore.collection('posts').doc(postId).collection('comments').add(commentData);
+      state = const AsyncData(null);
+    } catch(e) {
+      state = AsyncError(e, StackTrace.current);
+    }
+  }
+}
+
+// Provider untuk Notifier
+final postNotifierProvider =
+StateNotifierProvider<PostNotifier, AsyncValue<void>>((ref) {
+  return PostNotifier(ref);
+});
+
 // StateNotifier untuk mengelola state dan logika di halaman Create Post
 class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
   final PostRepository _postRepository;

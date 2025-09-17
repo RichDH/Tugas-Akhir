@@ -4,29 +4,37 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/profile/presentation/providers/profile_provider.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:program/fitur/profile/presentation/widgets/video_thumbnail_widget.dart'; // Import widget baru
-import 'package:intl/intl.dart'; // Import untuk format tanggal
+import 'package:program/fitur/profile/presentation/widgets/video_thumbnail_widget.dart';
+import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 
 class ProfileScreen extends ConsumerWidget {
-  const ProfileScreen({super.key});
+  // PERBAIKAN 1: Tambahkan parameter opsional untuk menerima userId dari luar
+  final String? userId;
+  const ProfileScreen({super.key, this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUserId = ref.watch(firebaseAuthProvider).currentUser?.uid;
+    // Tentukan ID siapa yang akan ditampilkan
+    final authUid = ref.watch(firebaseAuthProvider).currentUser?.uid;
+    final targetUserId = userId ?? authUid;
 
-    if (currentUserId == null) {
+    if (targetUserId == null) {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text("Pengguna tidak ditemukan.")));
     }
 
-    final userProfileAsync = ref.watch(userProfileStreamProvider(currentUserId));
-    final userPostsAsync = ref.watch(userPostsStreamProvider(currentUserId));
-    final followersCount = ref.watch(followersCountProvider(currentUserId)).value ?? 0;
-    final followingCount = ref.watch(followingCountProvider(currentUserId)).value ?? 0;
-    final userRequestsAsync = ref.watch(userRequestsStreamProvider(currentUserId));
-    final userShortsAsync = ref.watch(userShortsStreamProvider(currentUserId));
-    final userLiveHistoryAsync = ref.watch(userLiveHistoryStreamProvider(currentUserId));
-    // Gabungkan jumlah post dan request untuk statistik
+    // PERBAIKAN 2: Buat flag untuk mengecek apakah ini profil kita sendiri
+    final isMyProfile = targetUserId == authUid;
+
+    // Gunakan targetUserId untuk semua provider
+    final userProfileAsync = ref.watch(userProfileStreamProvider(targetUserId));
+    final userPostsAsync = ref.watch(userPostsStreamProvider(targetUserId));
+    final followersCount = ref.watch(followersCountProvider(targetUserId)).value ?? 0;
+    final followingCount = ref.watch(followingCountProvider(targetUserId)).value ?? 0;
+    final userRequestsAsync = ref.watch(userRequestsStreamProvider(targetUserId));
+    final userShortsAsync = ref.watch(userShortsStreamProvider(targetUserId));
+    final userLiveHistoryAsync = ref.watch(userLiveHistoryStreamProvider(targetUserId));
     final totalPostsCount = (userPostsAsync.value?.docs.length ?? 0) + (userRequestsAsync.value?.docs.length ?? 0);
 
     return Scaffold(
@@ -37,16 +45,19 @@ class ProfileScreen extends ConsumerWidget {
           error: (_, __) => const Text('Profil'),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              ref.read(authProvider.notifier).logout();
-            },
-          )
+          // PERBAIKAN 3: Hanya tampilkan tombol logout jika ini profil kita
+          if (isMyProfile)
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () {
+                // Pastikan Anda menggunakan notifier yang benar
+                ref.read(authProvider.notifier).logout();
+              },
+            )
         ],
       ),
       body: DefaultTabController(
-        length: 4, // Jumlah tab
+        length: 4,
         child: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
@@ -59,6 +70,7 @@ class ProfileScreen extends ConsumerWidget {
                         return const Text('Gagal memuat profil.');
                       }
                       final userData = userDoc.data() as Map<String, dynamic>;
+                      // PERBAIKAN 4: Kirim flag dan ID ke header
                       return _buildProfileHeader(
                         context: context,
                         username: userData['username'] ?? 'Tanpa Nama',
@@ -66,6 +78,8 @@ class ProfileScreen extends ConsumerWidget {
                         postsCount: totalPostsCount,
                         followersCount: followersCount,
                         followingCount: followingCount,
+                        isMyProfile: isMyProfile,
+                        targetUserId: targetUserId,
                       );
                     },
                     loading: () => const Center(child: CircularProgressIndicator()),
@@ -88,6 +102,7 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ];
           },
+
           body: TabBarView(
             children: [
               _buildGrid(asyncValue: userPostsAsync, emptyMessage: "Belum ada postingan jastip.", errorMessage: "Gagal memuat postingan."),
@@ -122,9 +137,7 @@ class ProfileScreen extends ConsumerWidget {
                       final title = live['title'] ?? 'Live Shopping';
                       final timestamp = live['createdAt'] as Timestamp?;
                       final formattedDate = timestamp != null
-                          ? DateFormat('d MMM yyyy, HH:mm').format(timestamp.toDate())
-                          : 'Tanggal tidak tersedia';
-
+                          ? DateFormat('d MMM yyyy, HH:mm').format(timestamp.toDate()) : 'Tanggal tidak tersedia';
                       return ListTile(
                         leading: const Icon(Icons.videocam_off_outlined),
                         title: Text(title),
@@ -148,6 +161,7 @@ class ProfileScreen extends ConsumerWidget {
     required String emptyMessage,
     required String errorMessage,
   }) {
+
     return asyncValue.when(
       data: (snapshot) {
         if (snapshot.docs.isEmpty) {
@@ -158,16 +172,27 @@ class ProfileScreen extends ConsumerWidget {
               crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
           itemCount: snapshot.docs.length,
           itemBuilder: (context, index) {
-            final post = snapshot.docs[index].data() as Map<String, dynamic>;
+            // Ambil seluruh dokumen post, bukan hanya datanya
+            final postDoc = snapshot.docs[index];
+            final post = postDoc.data() as Map<String, dynamic>;
             final imageUrls = post['imageUrls'] as List<dynamic>?;
+
             if (imageUrls == null || imageUrls.isEmpty) {
               return Container(
                   color: Colors.grey.shade200,
                   child: const Icon(Icons.image_not_supported));
+
             }
-            return Image.network(imageUrls[0],
-                fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => const Icon(Icons.error));
+            // PERBAIKAN: Bungkus gambar dengan GestureDetector
+            return GestureDetector(
+              onTap: () {
+                // Navigasi ke halaman detail dengan mengirim ID post
+                context.push('/post/${postDoc.id}');
+              },
+              child: Image.network(imageUrls[0],
+                  fit: BoxFit.cover,
+                  errorBuilder: (c, e, s) => const Icon(Icons.error)),
+            );
           },
         );
       },
@@ -175,6 +200,8 @@ class ProfileScreen extends ConsumerWidget {
       error: (e, s) => Center(child: Text(errorMessage)),
     );
   }
+
+  // PERBAIKAN 5: Modifikasi _buildProfileHeader untuk menampilkan tombol dinamis
   Widget _buildProfileHeader({
     required BuildContext context,
     required String username,
@@ -182,6 +209,8 @@ class ProfileScreen extends ConsumerWidget {
     required int postsCount,
     required int followersCount,
     required int followingCount,
+    required bool isMyProfile,
+    required String targetUserId,
   }) {
     return Column(
       children: [
@@ -217,17 +246,44 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 10),
-        ElevatedButton(
-          onPressed: () {},
-          child: const Text('Edit Profil'),
-          style: ElevatedButton.styleFrom(
-            minimumSize: const Size(double.infinity, 36),
+
+        // Logika untuk tombol dinamis
+        if (isMyProfile)
+        // Jika ini profilku, tampilkan tombol Edit Profil
+          ElevatedButton(
+            onPressed: () {},
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 36),
+            ),
+            child: const Text('Edit Profil'),
+          )
+        else
+        // Jika ini profil orang lain, tampilkan tombol Follow dan Message
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    // TODO: Tambahkan logika Follow/Unfollow
+                  },
+                  child: const Text('Follow'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    context.push('/chat/$targetUserId', extra: username);
+                  },
+                  child: const Text('Message'),
+                ),
+              ),
+            ],
           ),
-        ),
+
       ],
     );
   }
-
   Widget _buildStatColumn(String label, String count) {
     return Column(
       children: [

@@ -18,6 +18,8 @@ import 'package:program/fitur/live_shopping/presentation/screens/setup_live_scre
 import 'package:program/fitur/live_shopping/presentation/screens/jastiper_live_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/viewer_live_screen.dart';
 import 'package:program/fitur/chat/presentation/screens/chat_screens.dart';
+import 'package:program/fitur/chat/presentation/screens/chat_individu.dart';
+import 'package:program/fitur/post/presentation/screens/post_detail_screen.dart';
 
 
 final goRouter = Provider<GoRouter>((ref) {
@@ -31,22 +33,36 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/create-post', builder: (context, state) => const CreatePostScreen()),
       GoRoute(path: '/jastiper-live', builder: (context, state) => const JastiperLiveScreen()),
       GoRoute(path: '/viewer-live', builder: (context, state) => const ViewerLiveScreen()),
+      GoRoute(
+        path: '/post/:postId', // :postId adalah parameter ID post
+        builder: (context, state) {
+          final postId = state.pathParameters['postId']!;
+          return PostDetailScreen(postId: postId);
+        },
+      ),
 
       GoRoute(
         path: '/chat-list',
         builder: (context, state) => const ChatListScreen(),
       ),
-      // GoRoute(
-      //   path: '/chat/:userId',
-      //   builder: (context, state) {
-      //     final userId = state.pathParameters['userId']!;
-      //     final username = state.extra as String? ?? 'Chat';
-      //     return ChatScreen(
-      //       otherUserId: userId,
-      //       otherUsername: username,
-      //     );
-      //   },
-      // ),
+      GoRoute(
+        path: '/chat/:userId',
+        builder: (context, state) {
+          final userId = state.pathParameters['userId']!;
+          final username = state.extra as String? ?? 'Chat';
+          return ChatScreen(
+            otherUserId: userId,
+            otherUsername: username,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/user/:userId', // Rute baru dengan parameter
+        builder: (context, state) {
+          final userId = state.pathParameters['userId']!;
+          return ProfileScreen(userId: userId);
+        },
+      ),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---
       StatefulShellRoute.indexedStack(

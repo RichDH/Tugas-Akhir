@@ -23,7 +23,7 @@ dependencies:
   firebase_auth: ^5.6.2      # Untuk Autentikasi (Login, Register)
   cloud_firestore: ^5.6.7    # Database NoSQL Firestore
   firebase_storage: ^12.4.5     # Untuk menyimpan file (gambar/video)
-  firebase_messaging: ^15.2.5   # Untuk Push Notifications (FCM)
+  firebase_messaging: ^15.2.10   # Untuk Push Notifications (FCM)
   cloud_functions: ^5.5.0   # Diganti ke versi yang kompatibel dengan firebase_core ^2.32.0
   # --- State Management (Riverpod) ---
   flutter_riverpod: ^2.6.1     # State management utama

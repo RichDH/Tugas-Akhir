@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:program/app/providers/firebase_providers.dart'; // Sesuaikan nama_project_anda
+import 'package:program/app/providers/firebase_providers.dart';
+import 'package:program/core/services/fcm_service.dart';
 
 // Definisikan state untuk provider autentikasi
 class AuthState {
@@ -37,7 +38,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       // Jika berhasil, authStateChangesProvider akan otomatis mengupdate,
       // dan GoRouter akan melakukan redirect.
-      state = state.copyWith(isLoading: false); // Login berhasil, matikan loading
+      await FCMService().init();
+      state = state.copyWith(isLoading: false);
+      // Login berhasil, matikan loading
     } on FirebaseAuthException catch (e) {
       // Tangani error spesifik dari Firebase Auth
       String errorMessage = 'Terjadi kesalahan saat login.';
@@ -77,6 +80,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           'isVerified': false, // Tambahkan field verifikasi
           // Tambahkan field profil lain yang relevan
         });
+        await FCMService().init();
       }
       // ------------------------------------
 
