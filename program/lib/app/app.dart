@@ -45,11 +45,14 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/chat-list',
         builder: (context, state) => const ChatListScreen(),
       ),
+      // Di file router Anda
       GoRoute(
         path: '/chat/:userId',
         builder: (context, state) {
           final userId = state.pathParameters['userId']!;
-          final username = state.extra as String? ?? 'Chat';
+          final username = state.extra as String;
+
+          // Panggil constructor yang sudah diperbaiki
           return ChatScreen(
             otherUserId: userId,
             otherUsername: username,

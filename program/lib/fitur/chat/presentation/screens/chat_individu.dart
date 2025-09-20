@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:program/app/providers/firebase_providers.dart';
-import 'package:program/fitur/chat/presentation/providers/chat_provider.dart';
+import 'package:program/app/providers/firebase_providers.dart'; // Pastikan path ini benar
+import 'package:program/fitur/chat/presentation/providers/chat_provider.dart'; // Pastikan path ini benar
 
 class ChatScreen extends ConsumerStatefulWidget {
+  // --- PERBAIKAN 1: Hapus `chatRoomId` dari constructor ---
+  // Kita hanya butuh ID dan nama user lain, yang kita dapat dari GoRouter.
   final String otherUserId;
   final String otherUsername;
 
@@ -19,26 +21,37 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
-  late final String _chatRoomId;
+
+  // --- PERBAIKAN 2: Buat variabel untuk menampung chatRoomId ---
+  // Kita gunakan `late final` karena akan diinisialisasi sekali di initState.
+  late final String chatRoomId;
 
   @override
   void initState() {
     super.initState();
-    final currentUser = ref.read(firebaseAuthProvider).currentUser;
-    if (currentUser != null) {
-      List<String> ids = [currentUser.uid, widget.otherUserId];
-      ids.sort();
-      _chatRoomId = ids.join('_');
-    } else {
-      // Handle jika user tidak login, meskipun seharusnya tidak terjadi
-      Navigator.of(context).pop();
-    }
+    // --- PERBAIKAN 3: Logika untuk membuat chatRoomId ---
+    // Ini adalah bagian yang paling penting dan mungkin yang Anda lewatkan.
+
+    // Ambil ID pengguna yang sedang login
+    final currentUserId = ref.read(firebaseAuthProvider).currentUser!.uid;
+    final otherUserId = widget.otherUserId;
+
+    // Buat daftar ID dan urutkan berdasarkan abjad
+    List<String> ids = [currentUserId, otherUserId];
+    ids.sort();
+
+    // Gabungkan ID yang sudah diurutkan untuk membuat ID room yang unik dan konsisten
+    chatRoomId = ids.join('_');
   }
 
   void _sendMessage() {
     if (_messageController.text.trim().isNotEmpty) {
-      ref.read(chatNotifierProvider.notifier)
-          .sendMessage(widget.otherUserId, _messageController.text);
+      ref.read(chatNotifierProvider.notifier).sendMessage(
+        // Gunakan chatRoomId yang sudah kita buat di initState
+        chatRoomId,
+        widget.otherUserId,
+        _messageController.text,
+      );
       _messageController.clear();
       FocusScope.of(context).unfocus();
     }
@@ -52,11 +65,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messagesAsync = ref.watch(messagesStreamProvider(_chatRoomId));
+    // Gunakan chatRoomId dari state untuk mendengarkan stream pesan
+    final messagesAsync = ref.watch(messagesStreamProvider(chatRoomId));
     final currentUserId = ref.watch(firebaseAuthProvider).currentUser?.uid;
 
     return Scaffold(
       appBar: AppBar(
+        // otherUsername didapat dari widget, sudah benar
         title: Text(widget.otherUsername),
       ),
       body: Column(
@@ -68,25 +83,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   return const Center(child: Text("Mulai percakapan!"));
                 }
                 return ListView.builder(
-                  reverse: true, // Membuat list mulai dari bawah
+                  reverse: true,
                   padding: const EdgeInsets.all(8.0),
                   itemCount: snapshot.docs.length,
                   itemBuilder: (context, index) {
-                    final message = snapshot.docs[index].data() as Map<String, dynamic>;
+                    final message =
+                    snapshot.docs[index].data() as Map<String, dynamic>;
                     final bool isMe = message['senderId'] == currentUserId;
 
                     return Align(
-                      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                      alignment:
+                      isMe ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
-                        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                        margin: const EdgeInsets.symmetric(
+                            vertical: 4, horizontal: 8),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: isMe ? Theme.of(context).primaryColor : Colors.grey.shade300,
+                          color: isMe
+                              ? Theme.of(context).primaryColor
+                              : Colors.grey.shade300,
                           borderRadius: BorderRadius.circular(16),
                         ),
                         child: Text(
                           message['text'] ?? '',
-                          style: TextStyle(color: isMe ? Colors.white : Colors.black),
+                          style: TextStyle(
+                              color: isMe ? Colors.white : Colors.black),
                         ),
                       ),
                     );
@@ -94,10 +115,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (err, stack) => Center(child: Text("Error: ${err.toString()}")),
+              error: (err, stack) =>
+                  Center(child: Text("Error: ${err.toString()}")),
             ),
           ),
-          // Input area
+          // Input area (Tidak ada perubahan di sini, sudah bagus)
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(

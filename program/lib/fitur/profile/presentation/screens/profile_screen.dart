@@ -9,6 +9,8 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../chat/presentation/providers/chat_provider.dart';
+
 class ProfileScreen extends ConsumerWidget {
   // PERBAIKAN 1: Tambahkan parameter opsional untuk menerima userId dari luar
   final String? userId;
@@ -264,18 +266,38 @@ class ProfileScreen extends ConsumerWidget {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
-                    // TODO: Tambahkan logika Follow/Unfollow
+                    // TODO: Tambahkan logika Follow
                   },
                   child: const Text('Follow'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () {
-                    context.push('/chat/$targetUserId', extra: username);
+                child: Consumer( // PERBAIKAN: Bungkus dengan Consumer
+                  builder: (context, ref, child) {
+                    return OutlinedButton(
+                      onPressed: () async {
+                        try {
+                          // Panggil fungsi untuk membuat/mendapatkan chat room
+                          final chatRoomId = await ref
+                              .read(chatNotifierProvider.notifier)
+                              .createOrGetChatRoom(targetUserId);
+
+                          // Setelah berhasil, baru navigasi ke halaman chat
+                          context.push('/chat/$targetUserId', extra: {
+                            'username': username,
+                            'chatRoomId': chatRoomId,
+                          });
+
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Gagal memulai chat: ${e.toString()}"))
+                          );
+                        }
+                      },
+                      child: const Text('Message'),
+                    );
                   },
-                  child: const Text('Message'),
                 ),
               ),
             ],
