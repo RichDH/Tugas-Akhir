@@ -32,7 +32,8 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       GoRoute(path: '/create-post', builder: (context, state) => const CreatePostScreen()),
       GoRoute(path: '/jastiper-live', builder: (context, state) => const JastiperLiveScreen()),
-      GoRoute(path: '/viewer-live', builder: (context, state) => const ViewerLiveScreen()),
+      GoRoute(path: '/viewer-live', builder: (context, state) => const ViewerLiveScreen(),
+      ),
       GoRoute(
         path: '/post/:postId', // :postId adalah parameter ID post
         builder: (context, state) {

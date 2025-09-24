@@ -12,7 +12,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   ChatNotifier(this._ref) : super(ChatState());
 
   // GANTI URL INI dengan URL NGROK Anda yang sedang berjalan
-  final String _serverUrl = "https://cf28ee95f132.ngrok-free.app";
+  final String _serverUrl = "https://96301df595a4.ngrok-free.app";
 
   // FUNGSI BARU: Untuk membuat chat room sebelum masuk ke halaman chat
   Future<String> createOrGetChatRoom(String otherUserId) async {
