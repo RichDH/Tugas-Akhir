@@ -22,7 +22,7 @@ class LiveShoppingState {
   final HMSPeer? hostPeer;
   final bool isJoining;
   final String? roomId;
-  final String? sessionId;
+  final String? sessionId; // TAMBAHAN: untuk tracking session ID
 
   LiveShoppingState({
     this.isLoading = false,
@@ -86,6 +86,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
         _firestore = FirebaseFirestore.instance,
         super(LiveShoppingState());
 
+  // FUNGSI YANG DIPERBAIKI: Inisialisasi HMS SDK
   Future<void> _initializeHMSSDK() async {
     try {
       if (_hmsSDK != null) {
@@ -107,14 +108,15 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     }
   }
 
-  // PERBAIKAN: End active room only (tidak disable room)
+  // FUNGSI BARU: End active room di server 100ms untuk broadcaster
   Future<void> _endActiveRoomOnServer(String roomId) async {
     try {
-      debugPrint("Ending active room session on 100ms server: $roomId");
+      debugPrint("Ending active room on 100ms server: $roomId");
 
-      const String managementToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NTg3MTIxMzEsImV4cCI6MTc1OTMxNjkzMSwianRpIjoiYmFmZTczODgtOGIzMi00NDEyLTliYWYtMGQ2YjlhYzRjODAxIiwidHlwZSI6Im1hbmFnZW1lbnQiLCJ2ZXJzaW9uIjoyLCJuYmYiOjE3NTg3MTIxMzEsImFjY2Vzc19rZXkiOiI2NzhlMTA0OTMzY2U3NGFiOWJlOTUwNjEifQ.qKKJWjX1pi1GkdyV1mFqTwI_NtUfcmSAwOL2Z8E63i0';
-
+      // Panggil API untuk end active room
       const String baseUrl = 'https://api.100ms.live/v2';
+      const String managementToken = 'YOUR_MANAGEMENT_TOKEN_HERE'; // Ganti dengan management token Anda
+
       final url = Uri.parse('$baseUrl/active-rooms/$roomId/end-room');
 
       final response = await http.post(
@@ -125,81 +127,70 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
         },
         body: jsonEncode({
           'reason': 'Live shopping session ended by host',
-          'lock': false, // KUNCI: false agar room tidak di-disable
+          'lock': false,
         }),
-      ).timeout(const Duration(seconds: 10));
+      );
 
       debugPrint("API Response Status: ${response.statusCode}");
       debugPrint("API Response Body: ${response.body}");
 
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
-        debugPrint('Active room session ended successfully: ${responseData['message']}');
+        debugPrint('Active room ended successfully: ${responseData['message']}');
       } else if (response.statusCode == 404) {
-        debugPrint('Room session already inactive');
-        return;
+        debugPrint('Room already inactive or not found');
+        return; // Room sudah tidak aktif, tidak perlu error
       } else {
-        debugPrint('Failed to end active room session. Status: ${response.statusCode}');
-        throw HttpException('Failed to end active room session: ${response.statusCode}');
+        debugPrint('Failed to end active room. Status: ${response.statusCode}');
+        throw HttpException('Failed to end active room: ${response.statusCode}');
       }
 
     } catch (e) {
-      debugPrint("Error ending active room session: $e");
+      debugPrint("Error ending active room on server: $e");
+      // Tidak throw error karena ini fallback mechanism
     }
   }
 
-  // PERBAIKAN: Method untuk check dan re-enable room jika perlu
-  Future<void> _ensureRoomIsEnabled(String roomId) async {
+  // FUNGSI TAMBAHAN: End dan lock room sebagai fallback
+  Future<void> _endAndLockRoomOnServer(String roomId) async {
     try {
-      debugPrint("Checking room status: $roomId");
-
-      const String managementToken = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NTg3MTIxMzEsImV4cCI6MTc1OTMxNjkzMSwianRpIjoiYmFmZTczODgtOGIzMi00NDEyLTliYWYtMGQ2YjlhYzRjODAxIiwidHlwZSI6Im1hbmFnZW1lbnQiLCJ2ZXJzaW9uIjoyLCJuYmYiOjE3NTg3MTIxMzEsImFjY2Vzc19rZXkiOiI2NzhlMTA0OTMzY2U3NGFiOWJlOTUwNjEifQ.qKKJWjX1pi1GkdyV1mFqTwI_NtUfcmSAwOL2Z8E63i0';
+      debugPrint("Ending and locking room on 100ms server: $roomId");
 
       const String baseUrl = 'https://api.100ms.live/v2';
-      final checkUrl = Uri.parse('$baseUrl/rooms/$roomId');
+      const String managementToken = 'YOUR_MANAGEMENT_TOKEN_HERE'; // Ganti dengan management token Anda
 
-      final checkResponse = await http.get(
-        checkUrl,
+      final url = Uri.parse('$baseUrl/active-rooms/$roomId/end-room');
+
+      final response = await http.post(
+        url,
         headers: {
           'Authorization': 'Bearer $managementToken',
           'Content-Type': 'application/json',
         },
-      ).timeout(const Duration(seconds: 5));
+        body: jsonEncode({
+          'reason': 'Live shopping session permanently ended',
+          'lock': true, // Lock room permanently
+        }),
+      );
 
-      if (checkResponse.statusCode == 200) {
-        final roomData = jsonDecode(checkResponse.body);
-        final isEnabled = roomData['enabled'] ?? false;
+      debugPrint("Lock API Response Status: ${response.statusCode}");
+      debugPrint("Lock API Response Body: ${response.body}");
 
-        debugPrint("Room $roomId enabled status: $isEnabled");
-
-        if (!isEnabled) {
-          debugPrint("Room is disabled, attempting to re-enable...");
-
-          // Attempt to enable room
-          final enableUrl = Uri.parse('$baseUrl/rooms/$roomId');
-          final enableResponse = await http.post(
-            enableUrl,
-            headers: {
-              'Authorization': 'Bearer $managementToken',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({'enabled': true}),
-          ).timeout(const Duration(seconds: 5));
-
-          if (enableResponse.statusCode == 200) {
-            debugPrint("Room re-enabled successfully");
-          } else {
-            debugPrint("Failed to re-enable room: ${enableResponse.statusCode}");
-          }
-        }
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        debugPrint('Room ended and locked successfully: ${responseData['message']}');
+      } else if (response.statusCode == 404) {
+        debugPrint('Room already inactive or not found for locking');
+      } else {
+        debugPrint('Failed to end and lock room. Status: ${response.statusCode}');
       }
+
     } catch (e) {
-      debugPrint("Error checking/enabling room: $e");
+      debugPrint("Error ending and locking room on server: $e");
     }
   }
 
-  // HAPUS method _endAndLockRoomOnServer karena tidak diperlukan lagi
-
+  // FUNGSI BARU: Send end live message to all participants
   Future<void> _broadcastLiveEndMessage() async {
     try {
       if (_hmsSDK != null) {
@@ -215,46 +206,25 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     }
   }
 
-  Future<void> _forceDisconnectAllPeers() async {
-    try {
-      if (_hmsSDK != null) {
-        final room = await _hmsSDK!.getRoom();
-        if (room != null && room.peers != null) {
-          for (var peer in room.peers!) {
-            if (!peer.isLocal && peer.role?.name != 'broadcaster') {
-              try {
-                await _hmsSDK!.sendDirectMessage(
-                  message: jsonEncode({'type': 'FORCE_DISCONNECT'}),
-                  peerTo: peer,
-                );
-              } catch (e) {
-                debugPrint("Error sending direct message to ${peer.name}: $e");
-              }
-            }
-          }
-          debugPrint("Force disconnect messages sent to all peers");
-        }
-      }
-    } catch (e) {
-      debugPrint("Error force disconnecting peers: $e");
-    }
-  }
-
+  // FUNGSI YANG DIPERBAIKI: Reset complete state
   Future<void> resetState() async {
     debugPrint("=== RESETTING LIVE SHOPPING STATE ===");
 
     try {
+      // 1. Leave current room if connected
       if (_hmsSDK != null && state.isConnected) {
         debugPrint("Leaving current room...");
         await _hmsSDK!.leave();
         await Future.delayed(const Duration(milliseconds: 1500));
       }
 
+      // 2. Reset state COMPLETELY
       if (!_disposed) {
         state = LiveShoppingState();
         debugPrint("State reset completed - isConnected: ${state.isConnected}, role: ${state.currentRole}");
       }
 
+      // 3. Reinitialize HMS SDK
       await _initializeHMSSDK();
       debugPrint("HMS SDK reinitialized");
 
@@ -289,22 +259,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     }
   }
 
-  // PERBAIKAN: Create room dengan unique ID
-  Future<String> createUniqueRoom({required String title}) async {
-    try {
-      debugPrint("Creating unique room for title: $title");
-
-      // SOLUSI 1: Gunakan createUniqueRoom dari ApiService
-      final roomId = await _apiService.createUniqueRoom(title: title);
-      debugPrint("Unique room created with ID: $roomId");
-      return roomId;
-
-    } catch (e) {
-      debugPrint("Error creating unique room: $e");
-      throw Exception('Gagal membuat room: $e');
-    }
-  }
-
+  // FUNGSI YANG DIPERBAIKI: Join room dengan session ID tracking
   Future<void> joinRoom({
     required String roomId,
     required String userId,
@@ -321,6 +276,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
       return;
     }
 
+    // Set session ID untuk tracking (untuk broadcaster gunakan userId, untuk viewer gunakan roomId)
     final sessionId = role == 'broadcaster' ? userId : roomId;
 
     state = state.copyWith(
@@ -336,10 +292,12 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     );
 
     try {
+      // Ensure HMS SDK is ready
       if (_hmsSDK == null) {
         await _initializeHMSSDK();
       }
 
+      // Handle broadcaster specific setup
       if (role == 'broadcaster') {
         debugPrint("Setting up Firestore for broadcaster...");
         await _firestore.collection('live_sessions').doc(userId).set({
@@ -354,6 +312,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
         debugPrint("Firestore setup completed");
       }
 
+      // Get token and join
       debugPrint("Getting 100ms token...");
       final token = await _apiService.get100msToken(
           roomId: roomId, userId: userId, role: role);
@@ -451,75 +410,136 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     }
   }
 
-  // FUNGSI YANG DIPERBAIKI: Leave room dengan cleanup yang lebih baik
+  // PERBAIKAN: Method session store yang benar untuk HMS SDK
+  Future<void> _endSessionViaSessionStore() async {
+    try {
+      if (_hmsSDK != null) {
+        // HMS SDK menggunakan HMSSessionStore, bukan getSessionMetadata()
+        debugPrint("Attempting to set session ended flag...");
+
+        // Kirim metadata message untuk session ended
+        final endPayload = jsonEncode({
+          'type': 'SESSION_ENDED',
+          'endedBy': 'host',
+          'timestamp': DateTime.now().millisecondsSinceEpoch
+        });
+
+        await _hmsSDK!.sendBroadcastMessage(message: endPayload, type: 'metadata');
+        debugPrint("Session ended metadata sent");
+      }
+    } catch (e) {
+      debugPrint("Error ending session via session store: $e");
+    }
+  }
+
+  // SOLUSI TAMBAHAN: Menggunakan direct message untuk force disconnect
+  Future<void> _forceDisconnectAllPeers() async {
+
+    try {
+
+      if (_hmsSDK != null) {
+
+        final room = await _hmsSDK!.getRoom();
+
+        if (room != null && room.peers != null) {
+
+          for (var peer in room.peers!) {
+
+            if (!peer.isLocal && peer.role?.name != 'broadcaster') {
+
+              try {
+
+                await _hmsSDK!.sendDirectMessage(
+
+                  message: jsonEncode({'type': 'FORCE_DISCONNECT'}),
+
+                  peerTo: peer,
+
+                );
+
+              } catch (e) {
+
+                debugPrint("Error sending direct message to ${peer.name}: $e");
+
+              }
+
+            }
+          }
+          debugPrint("Force disconnect messages sent to all peers");
+        }
+      }
+    } catch (e) {
+      debugPrint("Error force disconnecting peers: $e");
+    }
+  }
+
+  // FUNGSI YANG DIPERBAIKI: Leave room dengan multiple cleanup methods
   Future<void> leaveRoom() async {
     debugPrint("=== LEAVING ROOM ===");
     debugPrint("Current role: ${state.currentRole}");
     debugPrint("Current room ID: ${state.roomId}");
+    debugPrint("Current session ID: ${state.sessionId}");
 
     final userIsBroadcaster = state.currentRole == 'broadcaster';
     final userId = FirebaseAuth.instance.currentUser?.uid;
     final roomId = state.roomId;
 
     try {
-      // STEP 1: Jika broadcaster, lakukan cleanup untuk semua participant
+      // STEP 1: Jika broadcaster, lakukan multiple cleanup methods
       if (userIsBroadcaster && roomId != null) {
-        debugPrint("Broadcasting live end message...");
+        debugPrint("Broadcasting live end message to all participants...");
         await _broadcastLiveEndMessage();
+
+        // TAMBAHAN: Coba multiple methods untuk memastikan room benar-benar end
+        debugPrint("Attempting session store cleanup...");
+        await _endSessionViaSessionStore();
 
         debugPrint("Force disconnecting all peers...");
         await _forceDisconnectAllPeers();
 
         // Tunggu sebentar agar message terkirim
-        await Future.delayed(const Duration(milliseconds: 3000));
+        await Future.delayed(const Duration(milliseconds: 2000));
+
+        debugPrint("Ending active room on 100ms server...");
+        await _endActiveRoomOnServer(roomId);
       }
 
       // STEP 2: Leave HMS room
       if (_hmsSDK != null) {
         debugPrint("Leaving HMS room...");
-        await _hmsSDK!.leave().timeout(const Duration(seconds: 10));
+        await _hmsSDK!.leave();
         debugPrint("Left HMS room successfully");
+
+        // TAMBAHAN: Tunggu sebentar setelah leave
+        await Future.delayed(const Duration(milliseconds: 1000));
       }
 
-      // STEP 3: Update Firestore status (broadcaster)
+      // STEP 3: Update Firestore status
       if (userIsBroadcaster && userId != null) {
         debugPrint("Updating Firestore status...");
         await _firestore.collection('live_sessions').doc(userId).update({
           'status': 'ended',
           'endedAt': FieldValue.serverTimestamp(),
-        }).timeout(const Duration(seconds: 5));
-        debugPrint("Firestore updated successfully");
+        }).catchError((e) => debugPrint("Gagal update status live: $e"));
       }
 
-      // STEP 4: CRITICAL - End active room session (broadcaster)
+      // STEP 4: TAMBAHAN - Jika masih ada active session, coba end via different method
       if (userIsBroadcaster && roomId != null) {
-        debugPrint("Ending active room session on 100ms server...");
-        await _endActiveRoomOnServer(roomId);
-
-        // STEP 5: Ensure room remains enabled for future use
+        debugPrint("Double checking - attempting alternative end room...");
         await Future.delayed(const Duration(milliseconds: 2000));
-        debugPrint("Ensuring room remains enabled...");
-        await _ensureRoomIsEnabled(roomId);
+        try {
+          await _endAndLockRoomOnServer(roomId); // Method alternatif dengan lock=true
+        } catch (e) {
+          debugPrint("Alternative end room failed: $e");
+        }
       }
 
     } catch (e) {
       debugPrint("Error during leave process: $e");
-
-      // EMERGENCY FALLBACK: Pastikan session di-end
-      if (userIsBroadcaster && roomId != null) {
-        debugPrint("Emergency fallback - trying to end room session again...");
-        try {
-          await _endActiveRoomOnServer(roomId);
-          await _ensureRoomIsEnabled(roomId);
-        } catch (fallbackError) {
-          debugPrint("Emergency fallback also failed: $fallbackError");
-        }
-      }
     }
 
-    // STEP 6: Reset state
+    // STEP 5: Reset state
     await resetState();
-    debugPrint("Leave room process completed");
   }
 
   @override
@@ -535,6 +555,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
           final newPrice = (data['price'] as num).toDouble();
           state = state.copyWith(currentItemPrice: newPrice);
         } else if (data['type'] == 'LIVE_ENDED') {
+          // PERBAIKAN: Handle live end message dari broadcaster
           debugPrint("Received live end message from broadcaster");
           if (state.currentRole != 'broadcaster') {
             state = state.copyWith(isLiveEnded: true);
@@ -545,6 +566,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
       }
     }
 
+    // TAMBAHAN: Handle direct messages untuk force disconnect
     if (message.hmsMessageRecipient?.hmsMessageRecipientType == HMSMessageRecipientType.DIRECT) {
       try {
         final data = jsonDecode(message.message);
@@ -580,6 +602,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
       return;
     }
 
+    // Update state to connected
     state = state.copyWith(
       isLoading: false,
       isConnected: true,
@@ -588,6 +611,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
 
     debugPrint("State updated - isConnected: ${state.isConnected}, role: ${state.currentRole}");
 
+    // Handle peers and tracks
     if (room.peers != null) {
       for (var peer in room.peers!) {
         if (!peer.isLocal) {
@@ -607,6 +631,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     if (_disposed) return;
 
     if (update == HMSPeerUpdate.peerLeft && !peer.isLocal) {
+      // PERBAIKAN: Tambahkan pengecekan role
       if (peer.role?.name == 'broadcaster' || peer.role?.name == 'host') {
         debugPrint("Broadcaster/Host left the room");
         state = state.copyWith(isLiveEnded: true);
@@ -631,6 +656,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
         if (peer.isLocal) {
           state = state.copyWith(localVideoTrack: null);
         } else {
+          // PERBAIKAN: Hanya set live ended jika track dari broadcaster/host
           if (peer.role?.name == 'broadcaster' || peer.role?.name == 'host') {
             state = state.copyWith(remoteVideoTrack: null, isLiveEnded: true, hostPeer: null);
           }
@@ -663,6 +689,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
   void onReconnecting() {}
   @override
   void onRemovedFromRoom({required HMSPeerRemovedFromPeer hmsPeerRemovedFromPeer}) {
+    // PERBAIKAN: Handle removed from room
     debugPrint("Removed from room: ${hmsPeerRemovedFromPeer.reason}");
     if (!_disposed) {
       state = state.copyWith(isLiveEnded: true);
@@ -678,6 +705,7 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
   void onPeerListUpdate({required List<HMSPeer> addedPeers, required List<HMSPeer> removedPeers}) {}
   @override
   void onRoomUpdate({required HMSRoom room, required HMSRoomUpdate update}) {
+    // PERBAIKAN: Handle room update
     debugPrint("Room update: $update");
     if (update == HMSRoomUpdate.roomPeerCountUpdated) {
       debugPrint("Peer count updated: ${room.peerCount}");
@@ -705,7 +733,10 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
 final liveShoppingProvider =
 StateNotifierProvider.autoDispose<LiveShoppingNotifier, LiveShoppingState>((ref) {
   final notifier = LiveShoppingNotifier(ref);
+
+  // Auto-initialize HMS SDK
   notifier._initializeHMSSDK();
+
   return notifier;
 });
 
