@@ -118,7 +118,7 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     double? price,
     required String location,
     required List<String> imagePaths,
-    String? videoPath, // Tetap ada jika Anda berencana mengimplementasikannya
+    String? videoPath,
     String? syarat,
     int? batasJumlahOffer,
     Timestamp? deadline,

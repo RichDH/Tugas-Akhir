@@ -23,6 +23,7 @@ import 'package:program/fitur/post/presentation/screens/post_detail_screen.dart'
 import 'package:program/fitur/transaction/presentation/screens/topup_screen.dart';
 import 'package:program/fitur/transaction/presentation/screens/webview_screen.dart';
 import 'package:program/fitur/transaction/presentation/screens/top_up_success_screen.dart';
+import 'package:program/fitur/verification/presentation/screens/verification_screen.dart';
 
 
 final goRouter = Provider<GoRouter>((ref) {
@@ -81,6 +82,10 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/top-up-success',
         builder: (context, state) => const TopUpSuccessScreen(),
+      ),
+      GoRoute(
+        path: '/verification',
+        builder: (context, state) => const VerificationScreen(),
       ),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---

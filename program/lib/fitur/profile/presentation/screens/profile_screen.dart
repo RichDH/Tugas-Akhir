@@ -47,44 +47,52 @@ class ProfileScreen extends ConsumerWidget {
           error: (_, __) => const Text('Profil'),
         ),
         actions: [
-          // PERBAIKAN 3: Hanya tampilkan tombol logout jika ini profil kita
           if (isMyProfile)
-          // Bungkus dengan Consumer agar bisa mengakses data user terbaru
             Consumer(
               builder: (context, ref, child) {
-                // Ambil data user dari provider profil yang sudah ada
                 final userProfileData = ref.watch(userProfileStreamProvider(targetUserId));
 
                 return PopupMenuButton<String>(
-                  onSelected: (value) {
-                    if (value == 'topup') {
-                      GoRouter.of(context).push('/top-up');
-                    } else if (value == 'logout') {
-                      ref.read(authProvider.notifier).logout();
-                    }
-                  },
+                  // PERBAIKAN: Atur lebar menu
+                  offset: const Offset(0, 40),
                   itemBuilder: (BuildContext context) {
-                    // Ambil nilai saldo dari snapshot
-                    final saldo = userProfileData.when(
-                      data: (doc) => (doc.data() as Map<String, dynamic>?)?['saldo'] ?? 0,
-                      loading: () => 0,
-                      error: (e, s) => 0,
+                    final data = userProfileData.when(
+                      data: (doc) => doc.data() as Map<String, dynamic>?,
+                      loading: () => null,
+                      error: (e, s) => null,
                     );
+                    final saldo = data?['saldo'] ?? 0;
+                    final verificationStatus = data?['verificationStatus'] as String? ?? 'unverified';
+
+                    // Format saldo agar lebih mudah dibaca (misal: 1.000.000)
+                    final formattedSaldo = NumberFormat.decimalPattern('id_ID').format(saldo);
 
                     return <PopupMenuEntry<String>>[
-                      // Tampilkan Saldo (tidak bisa diklik)
+                      // PERBAIKAN: Tampilan Saldo di paling atas dan lebih besar
                       PopupMenuItem<String>(
-                        enabled: false, // Membuat item tidak bisa diklik
-                        child: ListTile(
-                          leading: const Icon(Icons.account_balance_wallet),
-                          title: const Text('Saldo Anda'),
-                          trailing: Text(
-                            'Rp ${saldo.toStringAsFixed(0)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                        enabled: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Saldo Anda',
+                                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Rp $formattedSaldo',
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
                       const PopupMenuDivider(),
+
                       // Tombol Top Up
                       const PopupMenuItem<String>(
                         value: 'topup',
@@ -93,7 +101,35 @@ class ProfileScreen extends ConsumerWidget {
                           title: Text('Top Up Saldo'),
                         ),
                       ),
+
+                      // --- PERBAIKAN: Tombol & Status Verifikasi Dinamis ---
+                      if (verificationStatus == 'verified')
+                        const PopupMenuItem<String>(
+                          enabled: false,
+                          child: ListTile(
+                            leading: Icon(Icons.verified, color: Colors.green),
+                            title: Text('Akun Terverifikasi'),
+                          ),
+                        )
+                      else if (verificationStatus == 'pending')
+                        const PopupMenuItem<String>(
+                          enabled: false,
+                          child: ListTile(
+                            leading: Icon(Icons.hourglass_top, color: Colors.orange),
+                            title: Text('Verifikasi Ditinjau'),
+                          ),
+                        )
+                      else // Jika 'unverified' atau 'rejected'
+                        const PopupMenuItem<String>(
+                          value: 'verification',
+                          child: ListTile(
+                            leading: Icon(Icons.security),
+                            title: Text('Verifikasi Akun'),
+                          ),
+                        ),
+
                       const PopupMenuDivider(),
+
                       // Tombol Logout
                       const PopupMenuItem<String>(
                         value: 'logout',
@@ -103,6 +139,15 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                       ),
                     ];
+                  },
+                  onSelected: (value) {
+                    if (value == 'topup') {
+                      GoRouter.of(context).push('/top-up');
+                    } else if (value == 'verification') {
+                      GoRouter.of(context).push('/verification');
+                    } else if (value == 'logout') {
+                      ref.read(authProvider.notifier).logout();
+                    }
                   },
                 );
               },
