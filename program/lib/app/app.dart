@@ -20,6 +20,9 @@ import 'package:program/fitur/live_shopping/presentation/screens/viewer_live_scr
 import 'package:program/fitur/chat/presentation/screens/chat_screens.dart';
 import 'package:program/fitur/chat/presentation/screens/chat_individu.dart';
 import 'package:program/fitur/post/presentation/screens/post_detail_screen.dart';
+import 'package:program/fitur/transaction/presentation/screens/topup_screen.dart';
+import 'package:program/fitur/transaction/presentation/screens/webview_screen.dart';
+import 'package:program/fitur/transaction/presentation/screens/top_up_success_screen.dart';
 
 
 final goRouter = Provider<GoRouter>((ref) {
@@ -66,6 +69,18 @@ final goRouter = Provider<GoRouter>((ref) {
           final userId = state.pathParameters['userId']!;
           return ProfileScreen(userId: userId);
         },
+      ),
+      GoRoute(path: '/top-up', builder: (context, state) => const TopUpScreen()),
+      GoRoute(
+        path: '/webview',
+        builder: (context, state) {
+          final url = state.extra as String? ?? 'https://xendit.co';
+          return WebViewScreen(url: url);
+        },
+      ),
+      GoRoute(
+        path: '/top-up-success',
+        builder: (context, state) => const TopUpSuccessScreen(),
       ),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---

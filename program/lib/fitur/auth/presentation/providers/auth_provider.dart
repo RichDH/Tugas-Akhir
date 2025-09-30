@@ -78,6 +78,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           'username': username, // Simpan username awal
           'createdAt': Timestamp.now(),
           'isVerified': false, // Tambahkan field verifikasi
+          'saldo': 0,
           // Tambahkan field profil lain yang relevan
         });
         await FCMService().init();

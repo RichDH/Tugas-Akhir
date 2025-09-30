@@ -49,13 +49,64 @@ class ProfileScreen extends ConsumerWidget {
         actions: [
           // PERBAIKAN 3: Hanya tampilkan tombol logout jika ini profil kita
           if (isMyProfile)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () {
-                // Pastikan Anda menggunakan notifier yang benar
-                ref.read(authProvider.notifier).logout();
+          // Bungkus dengan Consumer agar bisa mengakses data user terbaru
+            Consumer(
+              builder: (context, ref, child) {
+                // Ambil data user dari provider profil yang sudah ada
+                final userProfileData = ref.watch(userProfileStreamProvider(targetUserId));
+
+                return PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'topup') {
+                      GoRouter.of(context).push('/top-up');
+                    } else if (value == 'logout') {
+                      ref.read(authProvider.notifier).logout();
+                    }
+                  },
+                  itemBuilder: (BuildContext context) {
+                    // Ambil nilai saldo dari snapshot
+                    final saldo = userProfileData.when(
+                      data: (doc) => (doc.data() as Map<String, dynamic>?)?['saldo'] ?? 0,
+                      loading: () => 0,
+                      error: (e, s) => 0,
+                    );
+
+                    return <PopupMenuEntry<String>>[
+                      // Tampilkan Saldo (tidak bisa diklik)
+                      PopupMenuItem<String>(
+                        enabled: false, // Membuat item tidak bisa diklik
+                        child: ListTile(
+                          leading: const Icon(Icons.account_balance_wallet),
+                          title: const Text('Saldo Anda'),
+                          trailing: Text(
+                            'Rp ${saldo.toStringAsFixed(0)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      // Tombol Top Up
+                      const PopupMenuItem<String>(
+                        value: 'topup',
+                        child: ListTile(
+                          leading: Icon(Icons.add_card),
+                          title: Text('Top Up Saldo'),
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      // Tombol Logout
+                      const PopupMenuItem<String>(
+                        value: 'logout',
+                        child: ListTile(
+                          leading: Icon(Icons.logout, color: Colors.red),
+                          title: Text('Logout', style: TextStyle(color: Colors.red)),
+                        ),
+                      ),
+                    ];
+                  },
+                );
               },
-            )
+            ),
         ],
       ),
       body: DefaultTabController(
