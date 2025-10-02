@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // PERBAIKAN: Import Riverpod
 import 'package:go_router/go_router.dart';
+import 'package:program/fitur/auth/presentation/providers/auth_provider.dart'; // PERBAIKAN: Import isAdminProvider
 
-class ScaffoldWithNavBar extends StatelessWidget {
+class ScaffoldWithNavBar extends ConsumerWidget { // PERBAIKAN: Ubah menjadi ConsumerWidget
   const ScaffoldWithNavBar({
     required this.navigationShell,
     Key? key,
@@ -10,36 +12,48 @@ class ScaffoldWithNavBar extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context) {
-    // PERBAIKAN: Logika baru untuk menentukan item mana yang harus di-highlight
+  Widget build(BuildContext context, WidgetRef ref) { // PERBAIKAN: Tambahkan WidgetRef ref
+    // PERBAIKAN: Cek apakah pengguna adalah admin
+    final bool isAdmin = ref.watch(isAdminProvider);
+
+    // Logika currentIndex Anda sudah benar dan tidak perlu diubah
     final int bottomNavIndex;
-    // `navigationShell.currentIndex` adalah index dari branch (0, 1, 2, 3)
-    // Jika branch index adalah 2 (Live) atau 3 (Profile), kita tambahkan 1
-    // untuk mendapatkan index BottomNavBar yang benar (3 atau 4), karena kita "melewati" item 'Post'.
     if (navigationShell.currentIndex >= 2) {
       bottomNavIndex = navigationShell.currentIndex + 1;
     } else {
       bottomNavIndex = navigationShell.currentIndex;
     }
 
+    // PERBAIKAN: Buat daftar item navigasi secara dinamis
+    final List<BottomNavigationBarItem> items = [
+      const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Feed'),
+      const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Explore'),
+      const BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: 'Post'),
+      const BottomNavigationBarItem(icon: Icon(Icons.live_tv), label: 'Live'),
+      const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+    ];
+
+    // Jika pengguna adalah admin, tambahkan item Admin di akhir
+    if (isAdmin) {
+      items.add(
+        const BottomNavigationBarItem(icon: Icon(Icons.admin_panel_settings), label: 'Admin'),
+      );
+    }
+
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: BottomNavigationBar(
-        // Menggunakan index yang sudah diperbaiki
         currentIndex: bottomNavIndex,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Feed'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Explore'),
-          BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: 'Post'),
-          BottomNavigationBarItem(icon: Icon(Icons.live_tv), label: 'Live'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-        // Logika onTap Anda sudah benar dan tidak perlu diubah
+        items: items, // Gunakan daftar item yang dinamis
         onTap: (index) {
-          if (index == 2) {
+          // Logika onTap Anda sudah benar untuk menangani tombol Post dan navigasi branch
+          // bahkan setelah menambahkan item Admin. Tidak perlu diubah.
+          if (index == 2) { // Tombol Post
             context.push('/create-post');
           } else {
             int branchIndex = index > 2 ? index - 1 : index;
+            // Jika admin dan menekan tab admin (index 5), branchIndex akan menjadi 4,
+            // yang sudah sesuai dengan branch admin yang kita buat di GoRouter.
             navigationShell.goBranch(
               branchIndex,
               initialLocation: branchIndex == navigationShell.currentIndex,

@@ -21,12 +21,15 @@ class VerificationRepositoryImpl implements VerificationRepository {
 
   @override
   Future<String> uploadVerificationImage(String imagePath, String userId, String docType) async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final uniquePublicId = '${docType}_$timestamp';
+
     try {
       final response = await _cloudinary.uploadFile(
         CloudinaryFile.fromFile(imagePath,
           resourceType: CloudinaryResourceType.Image,
           folder: 'verification_docs/$userId',
-          publicId: docType, // ktp atau selfie_ktp
+          publicId: uniquePublicId, // ktp atau selfie_ktp
         ),
       );
       return response.secureUrl;

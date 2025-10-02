@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +26,14 @@ import 'package:program/fitur/transaction/presentation/screens/webview_screen.da
 import 'package:program/fitur/transaction/presentation/screens/top_up_success_screen.dart';
 import 'package:program/fitur/verification/presentation/screens/verification_screen.dart';
 
+import 'package:program/fitur/admin/presentation/screens/admin_dashboard_screen.dart';
+import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_list_screen.dart';
+import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
+import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
+
 
 final goRouter = Provider<GoRouter>((ref) {
+  final isAdmin = ref.watch(isAdminProvider);
   final authState = ref.watch(authStateChangesProvider);
 
   return GoRouter(
@@ -87,6 +94,14 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/verification',
         builder: (context, state) => const VerificationScreen(),
       ),
+      GoRoute(
+        path: '/admin/verification-detail',
+        builder: (context, state) {
+          // Ambil DocumentSnapshot dari extra yang dikirim
+          final userDoc = state.extra as DocumentSnapshot;
+          return AdminVerificationDetailScreen(userDoc: userDoc);
+        },
+      ),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---
       StatefulShellRoute.indexedStack(
@@ -120,6 +135,23 @@ final goRouter = Provider<GoRouter>((ref) {
               GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
             ],
           ),
+
+          StatefulShellBranch(
+            routes: [
+              // Rute utama untuk admin adalah Dashboard
+              GoRoute(
+                path: '/admin',
+                builder: (context, state) => const AdminDashboardScreen(),
+                routes: [
+                  // Sub-rute untuk halaman lain di dalam panel admin
+                  GoRoute(
+                    path: 'verifications', // akan menjadi /admin/verifications
+                    builder: (context, state) => const AdminVerificationListScreen(),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
       ),
     ],
@@ -130,7 +162,17 @@ final goRouter = Provider<GoRouter>((ref) {
       final isAuthRoute = state.matchedLocation == '/login' || state.matchedLocation == '/register';
       final isRoot = state.matchedLocation == '/';
       if (isAuthenticated == null) return null;
-      if (isAuthenticated) {
+
+      if (isAuthenticated && isAdmin) {
+        final isAdminRoute = state.matchedLocation.startsWith('/admin');
+        if (!isAdminRoute) {
+          return '/admin';
+        }
+        return null;
+      }
+
+
+      if (isAuthenticated && !isAdmin) {
         if (isAuthRoute || isRoot) return '/feed';
       } else {
         if (!isAuthRoute) return '/login';

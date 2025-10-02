@@ -14,40 +14,72 @@ class VerificationScreen extends ConsumerStatefulWidget {
 class _VerificationScreenState extends ConsumerState<VerificationScreen> {
   XFile? _ktpImage;
   XFile? _selfieImage;
+  String? _validationError; // Untuk validasi lokal
   final ImagePicker _picker = ImagePicker();
 
   Future<void> _pickImage(ImageSource source, Function(XFile) onPicked,
       {CameraDevice cameraDevice = CameraDevice.rear}) async {
     final pickedFile = await _picker.pickImage(
       source: source,
-      preferredCameraDevice: cameraDevice, // Gunakan parameter ini
+      preferredCameraDevice: cameraDevice,
     );
     if (pickedFile != null) {
       setState(() {
         onPicked(pickedFile);
+        if (_validationError != null) {
+          _validationError = null; // Reset error jika user pilih gambar baru
+        }
       });
     }
   }
 
   void _submit() {
-    if (_ktpImage != null && _selfieImage != null) {
-      ref.read(verificationProvider.notifier)
-          .submitVerification(_ktpImage!, _selfieImage!)
-          .then((_) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Pengajuan verifikasi berhasil dikirim!')),
-        );
-        Navigator.of(context).pop();
-      }).catchError((e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
-        );
+    if (_ktpImage == null || _selfieImage == null) {
+      setState(() {
+        _validationError = 'Harap unggah kedua foto.';
       });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Harap unggah kedua foto.')),
-      );
+      return;
     }
+
+    // Reset error jika valid
+    setState(() { _validationError = null; });
+
+    ref.read(verificationProvider.notifier)
+        .submitVerification(_ktpImage!, _selfieImage!)
+        .then((_) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Berhasil!"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 60),
+              const SizedBox(height: 16),
+              const Text("Pengajuan verifikasi berhasil dikirim."),
+              const SizedBox(height: 8),
+              const Text("Admin akan meninjau dalam 1-3 hari kerja."),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop(); // Tutup dialog
+                if (context.mounted) {
+                  Navigator.of(context).pop(); // Kembali ke halaman sebelumnya
+                }
+              },
+              child: const Text("Oke"),
+            ),
+          ],
+        ),
+      );
+    }).catchError((e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: ${e.toString()}')),
+      );
+    });
   }
 
   @override
@@ -66,24 +98,30 @@ class _VerificationScreenState extends ConsumerState<VerificationScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            // Preview & Tombol Foto KTP
+            // Foto KTP
             _buildImagePicker(
               title: 'Foto KTP',
               imageFile: _ktpImage,
               onPressed: () => _pickImage(ImageSource.camera, (file) => _ktpImage = file),
             ),
-            const SizedBox(height: 24),
-            // Preview & Tombol Foto Selfie dengan KTP
+            const SizedBox(height: 8),
+            if (_validationError != null && _ktpImage == null)
+              Text(_validationError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            const SizedBox(height: 16),
+            // Foto Selfie dengan KTP
             _buildImagePicker(
               title: 'Foto Selfie dengan KTP',
               imageFile: _selfieImage,
               onPressed: () => _pickImage(
                 ImageSource.camera,
                     (file) => _selfieImage = file,
-                cameraDevice: CameraDevice.front, // <-- INI PERBAIKANNYA
+                cameraDevice: CameraDevice.front,
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
+            if (_validationError != null && _selfieImage == null)
+              Text(_validationError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+            const SizedBox(height: 24),
             state.isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : ElevatedButton(

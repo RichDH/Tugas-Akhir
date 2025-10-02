@@ -105,6 +105,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+
+
   // Metode untuk Logout
   Future<void> logout() async {
     state = state.copyWith(isLoading: true, error: null); // Optional: set loading saat logout
@@ -117,6 +119,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 }
+
+final isAdminProvider = Provider<bool>((ref) {
+  final authState = ref.watch(authStateChangesProvider);
+  final user = authState.value;
+  return user?.email == 'adminngoper87@gmail.com';
+});
 
 // Provider untuk AuthNotifier
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
