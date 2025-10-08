@@ -1,13 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:program/app/providers/firebase_providers.dart'; // Import provider Firebase
-import 'package:program/fitur/post/data/repositories/post_repository_impl.dart'; // Import implementasi repository
-import 'package:program/fitur/post/domain/repositories/post_repository.dart'; // Import interface repository
-import 'package:program/fitur/post/domain/entities/post.dart'; // Import entity Post
-import 'package:firebase_auth/firebase_auth.dart'; // Untuk mendapatkan UID user saat ini
-import 'package:cloud_firestore/cloud_firestore.dart'; // Untuk Timestamp dan username
+import 'package:program/app/providers/firebase_providers.dart';
+import 'package:program/fitur/post/data/repositories/post_repository_impl.dart';
+import 'package:program/fitur/post/domain/repositories/post_repository.dart';
+import 'package:program/fitur/post/domain/entities/post.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // Provider untuk PostRepository
-// Diperbaiki: PostRepositoryImpl sekarang hanya memerlukan firestore
 final postRepositoryProvider = Provider<PostRepository>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   return PostRepositoryImpl(firestore);
@@ -117,11 +116,20 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     required String category,
     double? price,
     required String location,
+    required String locationCity,
+    double? locationLat,
+    double? locationLng,
+    required Condition condition,
+    String? brand,
+    String? size,
+    String? weight,
+    String? additionalNotes,
     required List<String> imagePaths,
     String? videoPath,
     String? syarat,
-    int? batasJumlahOffer,
+    int? maxOffers,
     Timestamp? deadline,
+    bool isPriceNegotiable = false,
   }) async {
     state = const AsyncValue.loading();
 
@@ -135,25 +143,16 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
       final username = userDoc.data()?['username'] as String? ?? 'Pengguna Tidak Dikenal';
 
       List<String> imageUrls = [];
-      if (imagePaths.isNotEmpty) {
-        // Memanggil method uploadPostImages dari _postRepository yang sudah menggunakan CloudinaryPublic
-        // Atau jika Anda ingin menggunakan method dengan progress:
-        // imageUrls = await (_postRepository as PostRepositoryImpl).uploadPostImagesWithProgress(
-        //   imagePaths,
-        //   user.uid,
-        //   onProgress: (current, total, currentImageName) {
-        //     print('Uploading $currentImageName: $current/$total');
-        //     // Di sini Anda bisa memperbarui UI dengan progress jika diperlukan
-        //   },
-        // );
+      String? videoUrl;
+
+      if (videoPath != null) {
+        videoUrl = await _postRepository.uploadPostVideo(videoPath, user.uid);
+      } else if (imagePaths.isNotEmpty) {
         imageUrls = await _postRepository.uploadPostImages(imagePaths, user.uid);
       }
 
-      String? videoUrl;
-      // TODO: Implementasi upload video jika diperlukan (mungkin juga menggunakan Cloudinary)
-
       final newPost = Post(
-        id: '', // ID akan di-generate oleh Firestore
+        id: '',
         userId: user.uid,
         username: username,
         type: type,
@@ -162,12 +161,21 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
         category: category,
         price: price,
         location: location,
+        locationCity: locationCity,
+        locationLat: locationLat,
+        locationLng: locationLng,
+        condition: condition,
+        brand: brand,
+        size: size,
+        weight: weight,
+        additionalNotes: additionalNotes,
         imageUrls: imageUrls,
         videoUrl: videoUrl,
         createdAt: Timestamp.now(),
         syarat: syarat,
-        batasJumlahOffer: batasJumlahOffer,
+        maxOffers: maxOffers,
         deadline: deadline,
+        isPriceNegotiable: isPriceNegotiable,
       );
 
       await _postRepository.createPost(newPost);
@@ -176,8 +184,6 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e, stack) {
       print('Error creating post in Notifier: $e\n$stack');
       state = AsyncValue.error(e, stack);
-      // Pertimbangkan untuk melempar ulang error jika Anda ingin menanganinya lebih lanjut di UI
-      // rethrow;
     }
   }
 }
@@ -188,4 +194,11 @@ final createPostProvider = StateNotifierProvider<CreatePostNotifier, AsyncValue<
   final auth = ref.watch(firebaseAuthProvider);
   final firestore = ref.watch(firebaseFirestoreProvider);
   return CreatePostNotifier(postRepository, auth, firestore);
+});
+
+final postListStreamProvider = StreamProvider<List<Post>>((ref) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('posts').orderBy('createdAt', descending: true).snapshots().map((snapshot) {
+    return snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
+  });
 });

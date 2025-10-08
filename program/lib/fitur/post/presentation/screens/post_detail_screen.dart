@@ -6,7 +6,11 @@ import 'package:intl/intl.dart';
 
 import 'package:program/fitur/post/presentation/providers/post_provider.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
-import 'package:program/fitur/chat/presentation/screens/chat_individu.dart'; // Sesuaikan nama file jika perlu
+import 'package:program/fitur/chat/presentation/screens/chat_individu.dart';
+import 'package:program/fitur/post/presentation/widgets/video_player_widgets.dart';
+import 'package:program/fitur/cart/presentation/providers/cart_provider.dart';
+
+import '../../../cart/domain/entities/cart_item.dart'; // Tambahkan import ini
 
 class PostDetailScreen extends ConsumerWidget {
   final String postId;
@@ -27,6 +31,7 @@ class PostDetailScreen extends ConsumerWidget {
           final postData = postDoc.data() as Map<String, dynamic>;
           final sellerId = postData['userId'] as String? ?? '';
           final imageUrls = List<String>.from(postData['imageUrls'] ?? []);
+          final videoUrl = postData['videoUrl'] as String?;
           final likes = List<String>.from(postData['likes'] ?? []);
           final isLiked = likes.contains(currentUserId);
           final postType = postData['type'] as String? ?? 'jastip';
@@ -38,9 +43,15 @@ class PostDetailScreen extends ConsumerWidget {
           // Ambil username seller dari Firestore
           final sellerUserAsync = ref.watch(userProvider(sellerId));
 
+          // ✅ SIMPAN DATA POST KE VARIABEL LOKAL DI SINI — SEBELUM RETURN
+          final String? title = postData['title'] as String?;
+          final double? priceValue = (postData['price'] as num?)?.toDouble();
+          final List<String> imageUrlsList = List<String>.from(postData['imageUrls'] ?? []);
+          final Timestamp? deadline = postData['deadline'] as Timestamp?;
+
           return ListView(
             children: [
-              // Header Pengguna (dengan username dari Firestore)
+              // Header Pengguna
               if (sellerId.isNotEmpty)
                 sellerUserAsync.when(
                   data: (userDoc) {
@@ -57,10 +68,15 @@ class PostDetailScreen extends ConsumerWidget {
                   error: (e, s) => const ListTile(title: Text("Gagal memuat penjual")),
                 ),
 
-              // Gambar
-              if (imageUrls.isNotEmpty)
+              // Media: Video atau Gambar
+              if (videoUrl != null)
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: VideoPlayerWidget(url: videoUrl),
+                )
+              else if (imageUrlsList.isNotEmpty)
                 Image.network(
-                  imageUrls[0],
+                  imageUrlsList[0],
                   height: 300,
                   fit: BoxFit.cover,
                   loadingBuilder: (context, child, progress) {
@@ -79,6 +95,10 @@ class PostDetailScreen extends ConsumerWidget {
                 currentUserId: currentUserId,
                 sellerId: sellerId,
                 sellerUserAsync: sellerUserAsync,
+                title: title, // ✅ Lewatkan ke button
+                price: priceValue, // ✅ Lewatkan ke button
+                imageUrls: imageUrlsList, // ✅ Lewatkan ke button
+                deadline: deadline, // ✅ Lewatkan ke button
               ),
 
               // Detail
@@ -127,6 +147,10 @@ class PostDetailScreen extends ConsumerWidget {
     required String currentUserId,
     required String sellerId,
     required AsyncValue<DocumentSnapshot> sellerUserAsync,
+    required String? title, // ✅ Diterima dari build()
+    required double? price, // ✅ Diterima dari build()
+    required List<String> imageUrls, // ✅ Diterima dari build()
+    required Timestamp? deadline, // ✅ Diterima dari build()
   }) {
     if (currentUserId == sellerId || sellerId.isEmpty) {
       return const SizedBox.shrink();
@@ -146,7 +170,6 @@ class PostDetailScreen extends ConsumerWidget {
               IconButton(
                 icon: const Icon(Icons.chat_bubble_outline),
                 onPressed: () {
-                  // Ambil username seller
                   String sellerUsername = 'Penjual';
                   if (sellerUserAsync.valueOrNull?.exists == true) {
                     final userData = sellerUserAsync.valueOrNull!.data() as Map<String, dynamic>?;
@@ -166,8 +189,27 @@ class PostDetailScreen extends ConsumerWidget {
                   );
                 },
               ),
+              // ✅ TOMBOL TAMBAH KE KERANJANG (hanya untuk jastip/short)
+              if (postType == 'jastip' || postType == 'short')
+                IconButton(
+                  icon: const Icon(Icons.shopping_cart_outlined),
+                  onPressed: () {
+                    final cartItem = CartItem(
+                      postId: postId,
+                      title: title ?? '',
+                      price: price ?? 0,
+                      imageUrl: imageUrls.isNotEmpty ? imageUrls[0] : '',
+                      sellerId: sellerId,
+                      addedAt: Timestamp.now(),
+                      deadline: deadline, // Ambil deadline dari post
+                    );
+                    ref.read(cartProvider.notifier).addToCart(cartItem);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ditambahkan ke keranjang')));
+                  },
+                ),
             ],
           ),
+          // ✅ TOMBOL BELI SEKARANG (tetap ada)
           if (postType == 'jastip')
             ElevatedButton(
               onPressed: () => _handleOrder(context, ref, postId, sellerId),
@@ -197,23 +239,37 @@ class PostDetailScreen extends ConsumerWidget {
       return;
     }
 
-    ref.read(transactionProvider.notifier).createTransaction(
+    await ref.read(transactionProvider.notifier).createTransaction(
       postId: postId,
       buyerId: currentUser.uid,
       sellerId: sellerId,
       amount: amount,
       isEscrow: true,
       escrowAmount: amount,
-    ).then((_) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pesanan berhasil dibuat!')));
-      if (context.mounted) Navigator.pop(context);
-    }).catchError((e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: ${e.toString()}')));
-    });
+    );
+
+    _showSuccessDialog(context, 'Transaksi berhasil dibuat!\nSilakan tunggu konfirmasi dari jastiper.');
+    if (context.mounted) Navigator.pop(context);
+  }
+
+// Helper: Popup sukses
+  void _showSuccessDialog(BuildContext context, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Icon(Icons.check_circle, color: Colors.green, size: 64),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleMakeOffer(BuildContext context, WidgetRef ref, String postId, String sellerId) {
-    // Ambil username seller
     String sellerUsername = 'Penjual';
     final sellerUserDoc = ref.read(userProvider(sellerId)).valueOrNull;
     if (sellerUserDoc?.exists == true) {
@@ -257,7 +313,7 @@ class PostDetailScreen extends ConsumerWidget {
                 const Divider(),
                 Expanded(
                   child: commentsAsync.when(
-                    data: (snapshot) {
+                       data: (snapshot) {
                       if (snapshot.docs.isEmpty) {
                         return const Center(child: Text("Belum ada komentar"));
                       }

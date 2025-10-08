@@ -1,17 +1,14 @@
+// file: feed_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:program/fitur/post/domain/entities/post.dart'; // Import Post entity
-import 'package:program/fitur/post/domain/repositories/post_repository.dart'; // Import PostRepository
-import 'package:program/fitur/post/data/repositories/post_repository_impl.dart'; // Import implementasi repository
-import 'package:program/app/providers/firebase_providers.dart'; // Import provider Firestore dan Storage
-import 'package:program/fitur/post/presentation/providers/post_provider.dart'; // Import postRepositoryProvider
+import 'package:program/fitur/post/domain/entities/post.dart';
+import 'package:program/fitur/post/domain/repositories/post_repository.dart';
+import 'package:program/fitur/post/data/repositories/post_repository_impl.dart';
+import 'package:program/app/providers/firebase_providers.dart';
 
-// Provider yang menyediakan stream daftar postingan dari Firestore
+import '../../../post/presentation/providers/post_provider.dart';
+
+// Provider untuk stream daftar post
 final postsStreamProvider = StreamProvider<List<Post>>((ref) {
-  final postRepository = ref.watch(postRepositoryProvider); // Ambil repository dari provider
-
-  // Mengembalikan stream dari repository
-  return postRepository.getPosts();
+  final postRepository = ref.watch(postRepositoryProvider);
+  return postRepository.getPosts(); // Pastikan ini mengembalikan Stream<List<Post>>
 });
-
-// Anda mungkin perlu provider lain di sini nanti, misal untuk data Stories
-// final storiesStreamProvider = StreamProvider<List<Story>>((ref) { ... });

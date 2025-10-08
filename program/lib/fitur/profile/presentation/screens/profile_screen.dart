@@ -53,7 +53,6 @@ class ProfileScreen extends ConsumerWidget {
                 final userProfileData = ref.watch(userProfileStreamProvider(targetUserId));
 
                 return PopupMenuButton<String>(
-                  // PERBAIKAN: Atur lebar menu
                   offset: const Offset(0, 40),
                   itemBuilder: (BuildContext context) {
                     final data = userProfileData.when(
@@ -64,11 +63,9 @@ class ProfileScreen extends ConsumerWidget {
                     final saldo = data?['saldo'] ?? 0;
                     final verificationStatus = data?['verificationStatus'] as String? ?? 'unverified';
 
-                    // Format saldo agar lebih mudah dibaca (misal: 1.000.000)
                     final formattedSaldo = NumberFormat.decimalPattern('id_ID').format(saldo);
 
                     return <PopupMenuEntry<String>>[
-                      // PERBAIKAN: Tampilan Saldo di paling atas dan lebih besar
                       PopupMenuItem<String>(
                         enabled: false,
                         child: Padding(
@@ -102,7 +99,7 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                       ),
 
-                      // --- PERBAIKAN: Tombol & Status Verifikasi Dinamis ---
+                      // Status Verifikasi
                       if (verificationStatus == 'verified')
                         const PopupMenuItem<String>(
                           enabled: false,
@@ -119,7 +116,7 @@ class ProfileScreen extends ConsumerWidget {
                             title: Text('Verifikasi Ditinjau'),
                           ),
                         )
-                      else // Jika 'unverified' atau 'rejected'
+                      else
                         const PopupMenuItem<String>(
                           value: 'verification',
                           child: ListTile(
@@ -127,6 +124,25 @@ class ProfileScreen extends ConsumerWidget {
                             title: Text('Verifikasi Akun'),
                           ),
                         ),
+
+                      const PopupMenuDivider(),
+
+                      // ✅ TAMBAHKAN MENU RIWAYAT
+                      const PopupMenuItem<String>(
+                        value: 'transaction-history',
+                        child: ListTile(
+                          leading: Icon(Icons.history),
+                          title: Text('Riwayat Transaksi'),
+                        ),
+                      ),
+
+                      const PopupMenuItem<String>(
+                        value: 'request-history',
+                        child: ListTile(
+                          leading: Icon(Icons.request_page),
+                          title: Text('Riwayat Request'),
+                        ),
+                      ),
 
                       const PopupMenuDivider(),
 
@@ -145,6 +161,14 @@ class ProfileScreen extends ConsumerWidget {
                       GoRouter.of(context).push('/top-up');
                     } else if (value == 'verification') {
                       GoRouter.of(context).push('/verification');
+                    } else if (value == 'transaction-history') {
+                      // Navigasi ke halaman Riwayat Transaksi
+                      GoRouter.of(context).push('/transaction-history');
+                    } else if (value == 'request-history') {
+                      // Navigasi ke halaman Riwayat Request
+                      GoRouter.of(context).push('/request-history');
+                    }else if (value == 'return-response-list') {
+                      GoRouter.of(context).push('/return-response-list');
                     } else if (value == 'logout') {
                       ref.read(authProvider.notifier).logout();
                     }

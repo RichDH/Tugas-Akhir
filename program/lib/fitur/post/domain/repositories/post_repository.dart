@@ -1,8 +1,13 @@
-import 'package:program/fitur/post/domain/entities/post.dart'; // Sesuaikan nama_project_anda
+import 'package:program/fitur/post/domain/entities/post.dart';
 
 abstract class PostRepository {
+  /// Membuat post baru di Firestore
   Future<void> createPost(Post post);
+  /// Mengupload gambar post ke Cloudinary
   Future<List<String>> uploadPostImages(List<String> imagePaths, String userId);
-  Stream<List<Post>> getPosts(); // Metode untuk mendapatkan stream postingan
-// Tambahkan metode lain seperti update, delete, get single post, dll.
+  /// Mengupload video post ke Cloudinary (untuk PostType.short)
+  Future<String> uploadPostVideo(String videoPath, String userId);
+  /// Mendapatkan stream semua post (diurutkan terbaru)
+  Stream<List<Post>> getPosts();
+
 }

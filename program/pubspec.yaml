@@ -31,6 +31,8 @@ dependencies:
   riverpod_annotation: ^2.3.5  # (Opsional tapi direkomendasikan) Anotasi untuk code generation Riverpod
   hmssdk_flutter: ^1.10.6
   path_provider: ^2.1.5
+  video_player: ^2.8.0
+  flutter_background_service: ^1.0.4
   
 
   # --- Navigation ---

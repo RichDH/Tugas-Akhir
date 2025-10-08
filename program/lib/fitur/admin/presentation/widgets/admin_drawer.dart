@@ -40,6 +40,13 @@ class AdminDrawer extends ConsumerWidget {
               context.go('/admin/verifications');
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.undo),
+            title: const Text('Review Retur'),
+            onTap: () {
+              context.go('/admin/return-review');
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),

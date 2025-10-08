@@ -31,6 +31,18 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
+import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
+import '../fitur/admin/presentation/screens/return_review_screen.dart';
+import '../fitur/cart/presentation/screens/cart_screen.dart';
+import '../fitur/jualbeli/presentation/screens/request_history_screen.dart';
+import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
+import '../fitur/jualbeli/presentation/screens/transaction_detail_screen.dart';
+import '../fitur/jualbeli/presentation/screens/transaction_history_screen.dart';
+import '../fitur/profile/presentation/screens/history_screen.dart';
+import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
+import '../fitur/profile/presentation/screens/return_response_list_screen.dart';
+import '../fitur/profile/presentation/screens/return_response_screen.dart';
+
 
 final goRouter = Provider<GoRouter>((ref) {
   final isAdmin = ref.watch(isAdminProvider);
@@ -102,6 +114,42 @@ final goRouter = Provider<GoRouter>((ref) {
           return AdminVerificationDetailScreen(userDoc: userDoc);
         },
       ),
+      GoRoute(
+        path: '/cart',
+        builder: (context, state) => const CartScreen(),
+      ),
+      GoRoute(
+        path: '/transaction-detail/:id',
+        builder: (context, state) {
+          final transactionId = state.pathParameters['id']!;
+          return TransactionDetailScreen(transactionId: transactionId);
+        },
+      ),
+      GoRoute(
+        path: '/history',
+        builder: (context, state) => const HistoryScreen(),
+      ),
+      GoRoute(
+        path: '/transaction-history',
+        builder: (context, state) => const TransactionHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/request-history',
+        builder: (context, state) => const RequestHistoryScreen(),
+      ),
+      GoRoute(
+        path: '/admin/return-review',
+        builder: (context, state) => const ReturnReviewScreen(),
+      ),
+      GoRoute(path: '/list-interested-order', builder: (context, state) => const ListInterestedOrderScreen()),
+      GoRoute(path: '/admin/return-finalize', builder: (context, state) => const ReturnFinalizeScreen()), // ✅ TAMBAHKAN INI
+      GoRoute(path: '/admin/return-review', builder: (context, state) => const ReturnReviewScreen()),
+      GoRoute(path: '/return-response-list', builder: (context, state) => const ReturnResponseListScreen()),
+      GoRoute(path: '/return-response/:requestId', builder: (context, state) => ReturnResponseScreen(requestId: state.pathParameters['requestId']!)),
+      GoRoute(path: '/return-confirmation/:transactionId', builder: (context, state) => ReturnConfirmationScreen(transactionId: state.pathParameters['transactionId']!)),
+      GoRoute(path: '/history', builder: (context, state) => const HistoryScreen()),
+      GoRoute(path: '/transaction-history', builder: (context, state) => const TransactionHistoryScreen()),
+      GoRoute(path: '/request-history', builder: (context, state) => const RequestHistoryScreen()),
 
       // --- ShellRoute untuk Bottom Navigation Bar ---
       StatefulShellRoute.indexedStack(

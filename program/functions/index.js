@@ -6,6 +6,7 @@ const { SDK } = require("@100mslive/server-sdk");
 const admin = require("firebase-admin");
 const serviceAccount = require("./serviceAccountKey.json");
 const axios = require("axios");
+const cron = require('node-cron');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -41,6 +42,126 @@ app.post("/create-room", async (req, res) => {
   } catch (error) {
     console.error("Error saat membuat room:", error.message);
     res.status(500).json({ error: "Gagal membuat room baru." });
+  }
+});
+
+// ✅ CRON JOB: Auto-complete transaksi setiap 15 menit
+cron.schedule('*/15 * * * *', async () => {
+  console.log('[CRON] Menjalankan auto-complete transaksi...');
+  try {
+    const now = admin.firestore.Timestamp.now();
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
+
+    const transactions = await admin.firestore()
+      .collection('transactions')
+      .where('status', '==', 'delivered')
+      .where('completedAt', '==', null)
+      .where('deliveredAt', '<=', fifteenMinutesAgo)
+      .get();
+
+    const batch = admin.firestore().batch();
+    let count = 0;
+
+    transactions.docs.forEach((doc) => {
+      batch.update(doc.ref, {
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rating: null, // Kosongkan rating
+      });
+      count++;
+    });
+
+    if (count > 0) {
+      await batch.commit();
+      console.log(`[CRON] ${count} transaksi diselesaikan otomatis.`);
+    } else {
+      console.log('[CRON] Tidak ada transaksi yang perlu diselesaikan.');
+    }
+  } catch (error) {
+    console.error('[CRON ERROR] Gagal auto-complete:', error);
+  }
+});
+
+// ✅ CRON JOB: Auto-handle retur yang tidak direspon dalam 15 menit
+cron.schedule('*/15 * * * *', async () => {
+  console.log('[CRON] Memeriksa retur yang belum direspon...');
+  try {
+    const now = admin.firestore.Timestamp.now();
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
+
+    const returnRequests = await admin.firestore()
+      .collection('return_requests')
+      .where('status', '==', 'awaiting_seller_response')
+      .where('createdAt', '<=', fifteenMinutesAgo)
+      .get();
+
+    const batch = admin.firestore().batch();
+    let count = 0;
+
+    for (const doc of returnRequests.docs) {
+      const data = doc.data();
+      const transactionId = data.transactionId;
+
+      // 1. Update status retur → finalRejected
+      batch.update(doc.ref, {
+        status: 'final_rejected',
+        respondedAt: admin.firestore.FieldValue.serverTimestamp(),
+        responseReason: 'Jastiper tidak merespon dalam 15 menit',
+      });
+
+      // 2. Kembalikan dana ke pembeli (simulasi)
+      const transactionRef = admin.firestore().collection('transactions').doc(transactionId);
+      batch.update(transactionRef, {
+        status: 'refunded',
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rating: null,
+      });
+
+      count++;
+    }
+
+    if (count > 0) {
+      await batch.commit();
+      console.log(`[CRON] ${count} retur otomatis ditolak karena tidak direspon.`);
+    }
+  } catch (error) {
+    console.error('[CRON ERROR] Gagal proses retur otomatis:', error);
+  }
+});
+
+// --- ENDPOINT BARU: Auto-remove expired cart items ---
+app.get("/cleanup-expired-cart-items", async (req, res) => {
+  try {
+    const now = admin.firestore.Timestamp.now();
+    const usersRef = admin.firestore().collection("users");
+    const usersSnapshot = await usersRef.get();
+
+    let totalDeleted = 0;
+
+    for (const userDoc of usersSnapshot.docs) {
+      const cartRef = usersRef.doc(userDoc.id).collection("cart");
+      const cartSnapshot = await cartRef.get();
+
+      const batch = admin.firestore().batch();
+      let deletedCount = 0;
+
+      for (const itemDoc of cartSnapshot.docs) {
+        const item = itemDoc.data();
+        if (item.deadline && item.deadline.toDate() < now.toDate()) {
+          batch.delete(itemDoc.ref);
+          deletedCount++;
+          totalDeleted++;
+        }
+      }
+
+      if (deletedCount > 0) {
+        await batch.commit();
+      }
+    }
+
+    res.json({ success: true, deletedCount: totalDeleted });
+  } catch (error) {
+    console.error("Cleanup error:", error);
+    res.status(500).json({ error: "Gagal membersihkan keranjang" });
   }
 });
 

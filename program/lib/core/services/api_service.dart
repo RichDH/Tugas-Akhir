@@ -3,10 +3,11 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:program/app/constants/app_constants.dart';
 
 class ApiService {
   // ngrok http 3000
-  static const String _baseUrl = 'https://4d845549a394.ngrok-free.app';
+  static const String _baseUrl = AppConstants.ngrokUrl;
 
   // PERBAIKAN 1: Fungsi untuk membuat room dengan unique ID
   Future<String> createRoom({required String title}) async {

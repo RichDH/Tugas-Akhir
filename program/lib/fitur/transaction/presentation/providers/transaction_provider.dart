@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:program/app/providers/firebase_providers.dart';
+import 'package:program/app/constants/app_constants.dart';
 import 'package:http/http.dart' as http;
 
 // State untuk transaksi (tidak ada perubahan)
@@ -24,7 +25,7 @@ class TransactionNotifier extends StateNotifier<TransactionState> {
   TransactionNotifier(this._ref) : super(TransactionState());
 
   // PASTIKAN URL INI ADALAH URL NGROK ANDA YANG SEDANG AKTIF
-  final String _serverUrl = "https://4d845549a394.ngrok-free.app"; // Ganti dengan URL ngrok Anda
+  final String _serverUrl = AppConstants.ngrokUrl; // Ganti dengan URL ngrok Anda
 
   // PERBAIKAN: Fungsi ini sekarang mengembalikan Map<String, String>
   Future<Map<String, String>?> createInvoice(double amount) async {

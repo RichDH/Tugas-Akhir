@@ -1,5 +1,6 @@
-// 👇 Tambahkan 'hide Transaction' untuk hindari konflik nama
-import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+// File: lib/fitur/jualbeli/data/repositories/transaction_repository_impl.dart
+
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction; // HIDE Transaction saja
 import 'package:program/fitur/jualbeli/domain/entities/transaction_entity.dart';
 import 'package:program/fitur/jualbeli/domain/repositories/transaction_repository.dart';
 
@@ -54,7 +55,7 @@ class TransactionRepositoryImpl implements TransactionRepository {
   Future<void> updateTransactionStatus(String transactionId, TransactionStatus status) async {
     try {
       await _firestore.collection('transactions').doc(transactionId).update({
-        'status': status.name, // 👈 Lebih aman pakai .name daripada split
+        'status': status.name,
       });
     } catch (e) {
       throw Exception('Gagal memperbarui status transaksi: $e');
@@ -62,14 +63,107 @@ class TransactionRepositoryImpl implements TransactionRepository {
   }
 
   @override
-  Future<void> releaseEscrowFunds(String transactionId) async {
+  Future<void> acceptTransaction(String transactionId) async {
+    try {
+      await _firestore.collection('transactions').doc(transactionId).update({
+        'isAcceptedBySeller': true,
+        'status': 'paid',
+      });
+    } catch (e) {
+      throw Exception('Gagal menerima transaksi: $e');
+    }
+  }
+
+  @override
+  Future<void> rejectTransaction(String transactionId, String reason) async {
+    try {
+      await _firestore.collection('transactions').doc(transactionId).update({
+        'isAcceptedBySeller': false,
+        'rejectionReason': reason,
+        'status': 'refunded',
+      });
+    } catch (e) {
+      throw Exception('Gagal menolak transaksi: $e');
+    }
+  }
+
+  @override
+  Future<void> markAsShipped(String transactionId) async {
+    try {
+      await _firestore.collection('transactions').doc(transactionId).update({
+        'status': 'shipped',
+        'shippedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw Exception('Gagal menandai sebagai dikirim: $e');
+    }
+  }
+
+  @override
+  Future<void> markAsDelivered(String transactionId) async {
     try {
       await _firestore.collection('transactions').doc(transactionId).update({
         'status': 'delivered',
-        'releaseToSellerAt': FieldValue.serverTimestamp(),
+        'deliveredAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
+      throw Exception('Gagal menandai sebagai sampai: $e');
+    }
+  }
+
+  @override
+  Future<void> completeTransaction(String transactionId, int rating) async {
+    try {
+      await _firestore.collection('transactions').doc(transactionId).update({
+        'status': 'delivered', // Atau 'completed' — sesuaikan dengan enum Anda
+        'completedAt': FieldValue.serverTimestamp(),
+        'rating': rating,
+      });
+    } catch (e) {
+      throw Exception('Gagal menyelesaikan transaksi: $e');
+    }
+  }
+
+  @override
+  Future<void> confirmReturnReceived(String transactionId) async {
+    try {
+      await _firestore.collection('transactions').doc(transactionId).update({
+        'status': 'delivered',
+        'completedAt': FieldValue.serverTimestamp(),
+        'rating': null,
+      });
+    } catch (e) {
+      throw Exception('Gagal konfirmasi penerimaan retur: $e');
+    }
+  }
+
+  @override
+  Future<void> releaseEscrowFunds(String transactionId) async {
+    try {
+      // Simulasi: cek apakah seller sudah diverifikasi
+      final transaction = await getTransactionById(transactionId);
+      final userDoc = await _firestore.collection('users').doc(transaction.sellerId).get();
+      final isVerified = userDoc.data()?['isVerified'] == true;
+
+      if (isVerified) {
+        await _firestore.collection('transactions').doc(transactionId).update({
+          'status': 'delivered',
+          'releaseToSellerAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        print('Seller belum diverifikasi. Dana tidak dicairkan.');
+      }
+    } catch (e) {
       throw Exception('Gagal melepaskan dana escrow: $e');
+    }
+  }
+
+  @override
+  Future<DocumentReference> createTransactionAndGetRef(Transaction transaction) async {
+    try {
+      return await _firestore.collection('transactions').add(transaction.toFirestore());
+    } catch (e) {
+      throw Exception('Gagal membuat transaksi: $e');
     }
   }
 }

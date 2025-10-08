@@ -1,3 +1,4 @@
+// File: transaction_entity.dart
 import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -8,15 +9,19 @@ class Transaction extends Equatable {
   final String postId;
   final String buyerId;
   final String sellerId;
-  final double amount; // Jumlah dana yang ditransfer
+  final double amount;
   final TransactionStatus status;
   final Timestamp createdAt;
   final Timestamp? shippedAt;
   final Timestamp? deliveredAt;
+  final Timestamp? completedAt;
   final String? refundReason;
-  final bool isEscrow; // Dana ditahan di sistem
-  final double escrowAmount; // Jumlah yang ditahan
-  final Timestamp? releaseToSellerAt; // Waktu dana dicairkan ke seller
+  final bool isEscrow;
+  final double escrowAmount;
+  final Timestamp? releaseToSellerAt;
+  final bool isAcceptedBySeller;
+  final String? rejectionReason;
+  final int? rating;
 
   const Transaction({
     required this.id,
@@ -28,10 +33,14 @@ class Transaction extends Equatable {
     required this.createdAt,
     this.shippedAt,
     this.deliveredAt,
+    this.completedAt,
     this.refundReason,
     required this.isEscrow,
     required this.escrowAmount,
     this.releaseToSellerAt,
+    this.isAcceptedBySeller = false, // Default: belum diterima
+    this.rejectionReason,
+    this.rating,
   });
 
   factory Transaction.fromFirestore(DocumentSnapshot doc) {
@@ -46,10 +55,14 @@ class Transaction extends Equatable {
       createdAt: data['createdAt'] as Timestamp,
       shippedAt: data['shippedAt'] as Timestamp?,
       deliveredAt: data['deliveredAt'] as Timestamp?,
+      completedAt: data['completedAt'] as Timestamp?,
       refundReason: data['refundReason'] as String?,
       isEscrow: data['isEscrow'] as bool,
       escrowAmount: (data['escrowAmount'] as num).toDouble(),
       releaseToSellerAt: data['releaseToSellerAt'] as Timestamp?,
+      isAcceptedBySeller: data['isAcceptedBySeller'] as bool? ?? false,
+      rejectionReason: data['rejectionReason'] as String?,
+      rating: data['rating'] as int?,
     );
   }
 
@@ -73,16 +86,20 @@ class Transaction extends Equatable {
       'createdAt': createdAt,
       'shippedAt': shippedAt,
       'deliveredAt': deliveredAt,
+      'completedAt': completedAt,
       'refundReason': refundReason,
       'isEscrow': isEscrow,
       'escrowAmount': escrowAmount,
       'releaseToSellerAt': releaseToSellerAt,
+      'isAcceptedBySeller': isAcceptedBySeller,
+      'rejectionReason': rejectionReason,
+      'rating': rating,
     };
   }
 
   @override
   List<Object?> get props => [
-    id, postId, buyerId, sellerId, amount, status, createdAt, shippedAt, deliveredAt,
-    refundReason, isEscrow, escrowAmount, releaseToSellerAt
+    id, postId, buyerId, sellerId, amount, status, createdAt, shippedAt, deliveredAt, completedAt,
+    refundReason, isEscrow, escrowAmount, releaseToSellerAt, isAcceptedBySeller, rejectionReason,rating
   ];
 }
