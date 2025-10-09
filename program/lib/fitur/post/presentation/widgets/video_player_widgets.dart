@@ -1,55 +1,153 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:video_player/video_player.dart';
+import 'dart:io';
 
 class VideoPlayerWidget extends StatefulWidget {
-  final File? file;
   final String? url;
+  final File? file;
+  final bool autoPlay;
+  final bool showControls;
 
   const VideoPlayerWidget({
     super.key,
-    this.file,
     this.url,
-  }) : assert(file != null || url != null, 'Either file or url must be provided');
+    this.file,
+    this.autoPlay = false,
+    this.showControls = true,
+  });
 
   @override
   State<VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
 }
 
 class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
-  late VideoPlayerController _controller;
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _hasError = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.file != null) {
-      _controller = VideoPlayerController.file(widget.file!)
-        ..initialize().then((_) {
-          setState(() {});
-          _controller.play();
+    _initializeVideo();
+  }
+
+  void _initializeVideo() async {
+    try {
+      if (widget.url != null) {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url!));
+      } else if (widget.file != null) {
+        _controller = VideoPlayerController.file(widget.file!);
+      }
+
+      if (_controller != null) {
+        await _controller!.initialize();
+        _controller!.setLooping(true);
+
+        if (widget.autoPlay) {
+          _controller!.play();
+        }
+
+        setState(() {
+          _isInitialized = true;
         });
-    } else if (widget.url != null) {
-      _controller = VideoPlayerController.network(widget.url!)
-        ..initialize().then((_) {
-          setState(() {});
-          _controller.play();
-        });
+      }
+    } catch (e) {
+      setState(() {
+        _hasError = true;
+      });
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
+  void didUpdateWidget(VideoPlayerWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url || oldWidget.file != widget.file) {
+      _controller?.dispose();
+      _isInitialized = false;
+      _hasError = false;
+      _initializeVideo();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return _controller.value.isInitialized
-        ? AspectRatio(
-      aspectRatio: _controller.value.aspectRatio,
-      child: VideoPlayer(_controller),
-    )
-        : const Center(child: CircularProgressIndicator());
+    if (_hasError) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error, color: Colors.white, size: 48),
+              SizedBox(height: 8),
+              Text(
+                'Error loading video',
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!_isInitialized || _controller == null) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (_controller!.value.isPlaying) {
+            _controller!.pause();
+          } else {
+            _controller!.play();
+          }
+        });
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          VideoPlayer(_controller!),
+          if (!_controller!.value.isPlaying)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(50),
+              ),
+              child: const Icon(
+                Icons.play_arrow,
+                color: Colors.white,
+                size: 50,
+              ),
+            ),
+          if (widget.showControls)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: VideoProgressIndicator(
+                _controller!,
+                allowScrubbing: true,
+                colors: const VideoProgressColors(
+                  playedColor: Colors.blue,
+                  bufferedColor: Colors.grey,
+                  backgroundColor: Colors.black26,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

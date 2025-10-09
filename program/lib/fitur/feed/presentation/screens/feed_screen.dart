@@ -109,6 +109,7 @@ class FeedScreen extends ConsumerWidget {
           ),
 
           // List Postingan
+          // List Postingan
           Expanded(
             child: postsAsyncValue.when(
               data: (posts) {
@@ -116,19 +117,20 @@ class FeedScreen extends ConsumerWidget {
                   return const Center(child: Text('Belum ada postingan.'));
                 }
 
-                // Filter berdasarkan pilihan + abaikan 'live'
-                // Filter berdasarkan pilihan
+                // ✅ FILTER BERDASARKAN PILIHAN (menggunakan Post entity)
                 final filteredPosts = posts.where((post) {
-                  // Convert Map ke Post entity untuk filtering
-                  final postType = post['type'] as String?;
-
-                  if (currentFilter == FeedFilter.all) return postType != 'live';
-                  if (currentFilter == FeedFilter.short) return postType == 'short';
-                  if (currentFilter == FeedFilter.request) return postType == 'request';
-                  if (currentFilter == FeedFilter.jastip) return postType == 'jastip';
+                  if (currentFilter == FeedFilter.all) return true; // Abaikan live jika ada
+                  if (currentFilter == FeedFilter.short) return post.type == PostType.short;
+                  if (currentFilter == FeedFilter.request) return post.type == PostType.request;
+                  if (currentFilter == FeedFilter.jastip) return post.type == PostType.jastip;
                   return false;
                 }).toList();
 
+                if (filteredPosts.isEmpty) {
+                  return const Center(child: Text('Tidak ada postingan untuk ditampilkan.'));
+                }
+
+                // ✅ SPECIAL LAYOUT UNTUK SHORTS
                 if (currentFilter == FeedFilter.short) {
                   return PageView.builder(
                     scrollDirection: Axis.vertical,
@@ -140,6 +142,7 @@ class FeedScreen extends ConsumerWidget {
                   );
                 }
 
+                // Layout biasa untuk filter lainnya
                 return ListView.builder(
                   itemCount: filteredPosts.length,
                   itemBuilder: (context, index) {
@@ -152,6 +155,7 @@ class FeedScreen extends ConsumerWidget {
               error: (err, stack) => Center(child: Text('Error: $err')),
             ),
           ),
+
         ],
       ),
     );
