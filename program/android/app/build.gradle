@@ -9,6 +9,7 @@ plugins {
 
 android {
     namespace = "com.example.program"
+
     compileSdk = 35
     ndkVersion = flutter.ndkVersion
 

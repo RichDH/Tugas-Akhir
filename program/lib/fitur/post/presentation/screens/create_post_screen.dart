@@ -36,6 +36,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   PostType _selectedPostType = PostType.jastip;
   Condition _selectedCondition = Condition.baru;
+  String? _selectedCategory;
 
   List<File> _selectedImages = [];
   XFile? _selectedVideo; // Tambahkan ini untuk video
@@ -104,9 +105,23 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         });
       } catch (e) {
         print('Error searching locations: $e');
+        setState(() {
+          _locationSuggestions = [];
+        });
+
+        // Tampilkan error ke user jika perlu
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error mencari lokasi: ${e.toString()}'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
     }
   }
+
 
   @override
   void dispose() {
@@ -125,48 +140,125 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     super.dispose();
   }
 
+  void _resetForm() {
+    _formKey.currentState?.reset();
+    _titleController.clear();
+    _descriptionController.clear();
+    _categoryController.clear();
+    _priceController.clear();
+    _locationController.clear();
+    _syaratController.clear();
+    _maxOffersController.clear();
+    _deadlineController.clear();
+    _brandController.clear();
+    _sizeController.clear();
+    _weightController.clear();
+    _additionalNotesController.clear();
+    setState(() {
+      _selectedImages = [];
+      _selectedVideo = null;
+      _selectedPostType = PostType.jastip;
+      _selectedCondition = Condition.baru;
+      _selectedLocation = null;
+      _locationSuggestions = [];
+      _selectedCategory = null;
+      _isPriceNegotiable = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final createPostState = ref.watch(createPostProvider);
+    final List<String> _categories = [
+      'Elektronik',
+      'Fashion Pria',
+      'Fashion Wanita',
+      'Fashion Anak',
+      'Kecantikan & Perawatan',
+      'Kesehatan',
+      'Makanan & Minuman',
+      'Rumah Tangga',
+      'Olahraga & Outdoor',
+      'Hobi & Koleksi',
+      'Buku & Alat Tulis',
+      'Otomotif',
+      'Properti',
+      'Jasa',
+      'Lainnya'
+    ];
 
+
+
+    // Ganti ref.listen yang ada dengan ini:
     ref.listen<AsyncValue<void>>(createPostProvider, (_, state) {
       state.whenOrNull(
         data: (_) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Postingan berhasil dibuat!')),
+          // ✅ POPUP SUKSES DENGAN IKON HIJAU
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext dialogContext) {
+              return AlertDialog(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.green,
+                      size: 64,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Berhasil!',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Postingan berhasil dibuat dan dipublikasikan.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.of(dialogContext).pop();
+                          _resetForm();
+                          context.go('/feed');
+                        },
+                        child: const Text('Lihat di Feed'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           );
-          // Reset form setelah berhasil
-          _formKey.currentState?.reset();
-          _titleController.clear();
-          _descriptionController.clear();
-          _categoryController.clear();
-          _priceController.clear();
-          _locationController.clear();
-          _syaratController.clear();
-          _maxOffersController.clear();
-          _deadlineController.clear();
-          _brandController.clear();
-          _sizeController.clear();
-          _weightController.clear();
-          _additionalNotesController.clear();
-          setState(() {
-            _selectedImages = [];
-            _selectedVideo = null;
-            _selectedPostType = PostType.jastip;
-            _selectedCondition = Condition.baru;
-            _selectedLocation = null;
-            _locationSuggestions = [];
-          });
-          // Optional: Navigasi kembali ke Feed setelah berhasil
-          // context.go('/feed');
         },
         error: (e, stack) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal membuat postingan: ${e.toString()}')),
+            SnackBar(
+              content: Text('Gagal membuat postingan: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
           );
         },
       );
     });
+
 
     return Scaffold(
       appBar: AppBar(title: const Text('Buat Postingan Baru')),
@@ -205,12 +297,12 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
-                  labelText: 'Judul Postingan',
+                  labelText: 'Nama barang',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.isEmpty) {
-                    return 'Judul tidak boleh kosong';
+                    return 'Nama tidak boleh kosong';
                   }
                   return null;
                 },
@@ -233,21 +325,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               ),
               const SizedBox(height: 20),
 
-              TextFormField(
-                controller: _categoryController,
-                decoration: const InputDecoration(
-                  labelText: 'Kategori',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Kategori tidak boleh kosong';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 20),
-
               // Harga hanya untuk jastip & short
               if (_selectedPostType == PostType.jastip || _selectedPostType == PostType.short)
                 TextFormField(
@@ -263,42 +340,98 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
               const SizedBox(height: 20),
 
-              // Lokasi (untuk semua jenis post)
-              TextFormField(
-                controller: _locationController,
-                decoration: InputDecoration(
-                  labelText: 'Lokasi (Kota/Kabupaten)',
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Kategori',
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (value) async {
-                  if (value.length > 2) {
-                    await _searchLocations(value);
+                items: _categories.map((String category) {
+                  return DropdownMenuItem<String>(
+                    value: category,
+                    child: Text(category),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedCategory = newValue;
+                    _categoryController.text = newValue ?? '';
+                  });
+                },
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Kategori tidak boleh kosong';
                   }
+                  return null;
                 },
               ),
-
-              // Tampilkan dropdown jika ada suggestion
-              if (_locationSuggestions.isNotEmpty)
-                SizedBox(
-                  height: 150,
-                  child: ListView.builder(
-                    itemCount: _locationSuggestions.length,
-                    itemBuilder: (context, index) {
-                      final loc = _locationSuggestions[index];
-                      return ListTile(
-                        title: Text(loc.name),
-                        subtitle: Text('${loc.country} - Lat: ${loc.lat}, Lng: ${loc.lng}'),
-                        onTap: () {
-                          setState(() {
-                            _locationController.text = loc.name;
-                            _selectedLocation = loc;
-                            _locationSuggestions = [];
-                          });
-                        },
-                      );
+              const SizedBox(height: 20),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextFormField(
+                    controller: _locationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Lokasi (Kota/Kabupaten)',
+                      border: OutlineInputBorder(),
+                      helperText: 'Ketik minimal 3 karakter untuk mencari lokasi',
+                    ),
+                    onChanged: (value) async {
+                      if (value.length > 2) {
+                        await _searchLocations(value);
+                      } else {
+                        setState(() {
+                          _locationSuggestions = [];
+                        });
+                      }
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Lokasi tidak boleh kosong';
+                      }
+                      return null;
                     },
                   ),
-                ),
+
+                  // Tampilkan dropdown suggestion dengan design yang lebih baik
+                  if (_locationSuggestions.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _locationSuggestions.length,
+                        separatorBuilder: (context, index) => Divider(height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (context, index) {
+                          final loc = _locationSuggestions[index];
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              loc.displayName,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            subtitle: Text(
+                              '${loc.country}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                            trailing: Icon(Icons.location_on, size: 16, color: Colors.grey.shade600),
+                            onTap: () {
+                              setState(() {
+                                _locationController.text = loc.displayName;
+                                _selectedLocation = loc;
+                                _locationSuggestions = [];
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
 
               const SizedBox(height: 20),
 

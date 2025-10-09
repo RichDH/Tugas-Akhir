@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../cart/domain/entities/cart_item.dart';
 import '../../../post/presentation/providers/post_provider.dart';
 import '../../domain/entities/feed_filter.dart';
+import '../widgets/short_widget.dart';
 
 class FeedScreen extends ConsumerWidget {
   const FeedScreen({super.key});
@@ -116,19 +117,27 @@ class FeedScreen extends ConsumerWidget {
                 }
 
                 // Filter berdasarkan pilihan + abaikan 'live'
-                final filteredPosts = posts
-                    .where((post) {
-                  if (currentFilter == FeedFilter.all) return true;
-                  if (currentFilter == FeedFilter.short && post.type == 'short') return true;
-                  if (currentFilter == FeedFilter.request && post.type == 'request') return true;
-                  if (currentFilter == FeedFilter.jastip && post.type == 'jastip') return true;
-                  return false;
-                })
-                    .where((post) => post.type != 'live') // ✅ Abaikan live
-                    .toList();
+                // Filter berdasarkan pilihan
+                final filteredPosts = posts.where((post) {
+                  // Convert Map ke Post entity untuk filtering
+                  final postType = post['type'] as String?;
 
-                if (filteredPosts.isEmpty) {
-                  return const Center(child: Text('Tidak ada postingan untuk ditampilkan.'));
+                  if (currentFilter == FeedFilter.all) return postType != 'live';
+                  if (currentFilter == FeedFilter.short) return postType == 'short';
+                  if (currentFilter == FeedFilter.request) return postType == 'request';
+                  if (currentFilter == FeedFilter.jastip) return postType == 'jastip';
+                  return false;
+                }).toList();
+
+                if (currentFilter == FeedFilter.short) {
+                  return PageView.builder(
+                    scrollDirection: Axis.vertical,
+                    itemCount: filteredPosts.length,
+                    itemBuilder: (context, index) {
+                      final post = filteredPosts[index];
+                      return ShortsWidget(post: post);
+                    },
+                  );
                 }
 
                 return ListView.builder(
@@ -160,107 +169,157 @@ class PostWidget extends ConsumerWidget {
     final formattedPrice = post.price != null
         ? NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0)
         .format(post.price!)
-        : 'Harga tidak tersedia';
+        : 'Free';
 
-    return Card(
-      margin: const EdgeInsets.all(8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header: Penjual
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person)),
-            title: Text(post.username ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(post.location ?? ''),
-          ),
-
-          // Media: Video atau Gambar
-          if (post.videoUrl != null)
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: VideoPlayerWidget(url: post.videoUrl!),
-            )
-          else if (post.imageUrls.isNotEmpty)
-            Image.network(
-              post.imageUrls[0],
-              height: 200,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, progress) {
-                return progress == null ? child : const Center(child: CircularProgressIndicator());
-              },
-              errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error)),
+    return GestureDetector(
+      // ✅ KLIK POST UNTUK KE DETAIL
+      onTap: () {
+        context.push('/post-detail/${post.id}');
+      },
+      child: Card(
+        margin: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: Penjual
+            ListTile(
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(post.username ?? 'Pengguna', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(post.location ?? ''),
             ),
 
-          // Detail Post
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(post.title ?? '', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(post.description ?? ''),
-                const SizedBox(height: 8),
-                Text('Kategori: ${post.category ?? '–'}'),
-                const SizedBox(height: 8),
-                Text(formattedPrice, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)),
-              ],
-            ),
-          ),
+            // ✅ MEDIA DENGAN ASPECT RATIO YANG TEPAT
+            if (post.videoUrl != null)
+            // Video untuk shorts dengan aspect ratio 9:16 (seperti TikTok)
+              post.type == PostType.short
+                  ? Container(
+                height: 400, // Tinggi tetap untuk shorts
+                width: double.infinity,
+                color: Colors.black,
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: 9 / 16, // Portrait aspect ratio
+                    child: VideoPlayerWidget(url: post.videoUrl!),
+                  ),
+                ),
+              )
+                  : AspectRatio(
+                aspectRatio: 16 / 9, // Landscape untuk video biasa
+                child: Container(
+                  color: Colors.black,
+                  child: VideoPlayerWidget(url: post.videoUrl!),
+                ),
+              )
+            else if (post.imageUrls.isNotEmpty)
+            // ✅ IMAGE DENGAN BACKGROUND HITAM UNTUK PORTRAIT
+              Container(
+                width: double.infinity,
+                height: 300,
+                color: Colors.black,
+                child: Image.network(
+                  post.imageUrls[0],
+                  fit: BoxFit.contain, // Jangan penyet, maintain aspect ratio
+                  loadingBuilder: (context, child, progress) {
+                    return progress == null
+                        ? child
+                        : const Center(child: CircularProgressIndicator());
+                  },
+                  errorBuilder: (context, error, stackTrace) =>
+                  const Center(child: Icon(Icons.error, color: Colors.white)),
+                ),
+              ),
 
-          // Action Buttons
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.favorite_border),
-                      onPressed: () {
-                        ref.read(postNotifierProvider.notifier).toggleLike(post.id);
-                      },
+            // Detail Post
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.title ?? '',
+                    style: Theme.of(context).textTheme.titleMedium,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    post.description ?? '',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Kategori: ${post.category ?? '–'}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    formattedPrice,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                        fontSize: 18
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.chat_bubble_outline),
-                      onPressed: () {
-                        context.push('/chat/${post.userId}');
-                      },
-                    ),
-                    // ✅ TOMBOL KERANJANG (hanya untuk jastip/short)
-                    if (post.type == 'jastip' || post.type == 'short')
+                  ),
+                ],
+              ),
+            ),
+
+            // Action Buttons
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
                       IconButton(
-                        icon: const Icon(Icons.shopping_cart_outlined),
+                        icon: const Icon(Icons.favorite_border),
                         onPressed: () {
-                          final cartItem = CartItem(
-                            postId: post.id,
-                            title: post.title ?? '',
-                            price: post.price ?? 0,
-                            imageUrl: post.imageUrls.isNotEmpty ? post.imageUrls[0] : '',
-                            sellerId: post.userId,
-                            addedAt: Timestamp.now(),
-                            deadline: post.deadline,
-                          );
-                          ref.read(cartProvider.notifier).addToCart(cartItem);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Ditambahkan ke keranjang')),
-                          );
+                          ref.read(postNotifierProvider.notifier).toggleLike(post.id);
                         },
                       ),
-                  ],
-                ),
-                if (post.type == 'jastip')
-                  ElevatedButton(
-                    onPressed: () {
-                      context.push('/post-detail/${post.id}');
-                    },
-                    child: const Text('Beli Sekarang'),
+                      IconButton(
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        onPressed: () {
+                          context.push('/chat/${post.userId}');
+                        },
+                      ),
+                      // ✅ TOMBOL KERANJANG (hanya untuk jastip/short)
+                      if (post.type == PostType.jastip || post.type == PostType.short)
+                        IconButton(
+                          icon: const Icon(Icons.shopping_cart_outlined),
+                          onPressed: () {
+                            final cartItem = CartItem(
+                              postId: post.id,
+                              title: post.title ?? '',
+                              price: post.price ?? 0,
+                              imageUrl: post.imageUrls.isNotEmpty ? post.imageUrls[0] : '',
+                              sellerId: post.userId,
+                              addedAt: Timestamp.now(),
+                              deadline: post.deadline,
+                            );
+                            ref.read(cartProvider.notifier).addToCart(cartItem);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Ditambahkan ke keranjang'),
+                                backgroundColor: Colors.green,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                        ),
+                    ],
                   ),
-              ],
+                  if (post.type == PostType.jastip)
+                    ElevatedButton(
+                      onPressed: () {
+                        context.push('/post-detail/${post.id}');
+                      },
+                      child: const Text('Beli Sekarang'),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
