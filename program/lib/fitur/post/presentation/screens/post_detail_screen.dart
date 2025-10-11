@@ -657,7 +657,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           .doc(user.uid)
           .get();
 
-      final userBalance = (userDoc.data()?['balance'] as num?)?.toDouble() ?? 0.0;
+      final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
       if (userBalance < totalAmount) {
         // ✅ SALDO TIDAK MENCUKUPI

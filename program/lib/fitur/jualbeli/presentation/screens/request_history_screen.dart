@@ -8,6 +8,7 @@ import 'package:program/fitur/post/domain/entities/post.dart';
 import 'package:program/fitur/post/presentation/providers/post_provider.dart';
 
 import '../../../feed/presentation/screens/feed_screen.dart';
+import '../../../feed/presentation/widgets/post_widget.dart';
 
 class RequestHistoryScreen extends ConsumerWidget {
   const RequestHistoryScreen({super.key});

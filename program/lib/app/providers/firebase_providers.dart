@@ -8,7 +8,6 @@ final firebaseAuthProvider = Provider<FirebaseAuth>((ref) {
   return FirebaseAuth.instance;
 });
 
-
 // Provider untuk mendapatkan instance FirebaseFirestore
 final firebaseFirestoreProvider = Provider<FirebaseFirestore>((ref) {
   return FirebaseFirestore.instance;
@@ -19,7 +18,22 @@ final firebaseStorageProvider = Provider<FirebaseStorage>((ref) {
 });
 
 // Provider untuk mendengarkan perubahan status autentikasi
-// Ini akan menghasilkan Stream<User?>
 final authStateChangesProvider = StreamProvider<User?>((ref) {
   return ref.watch(firebaseAuthProvider).authStateChanges();
+});
+
+// ✅ TAMBAHKAN PROVIDER UNTUK CURRENT USER
+final currentUserProvider = Provider<User?>((ref) {
+  final authState = ref.watch(authStateChangesProvider);
+  return authState.when(
+    data: (user) => user,
+    loading: () => null,
+    error: (_, __) => null,
+  );
+});
+
+// ✅ PROVIDER UNTUK CEK APAKAH USER SUDAH LOGIN
+final isAuthenticatedProvider = Provider<bool>((ref) {
+  final user = ref.watch(currentUserProvider);
+  return user != null;
 });

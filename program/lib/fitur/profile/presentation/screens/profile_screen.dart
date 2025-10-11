@@ -12,13 +12,11 @@ import 'package:go_router/go_router.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
-  // PERBAIKAN 1: Tambahkan parameter opsional untuk menerima userId dari luar
   final String? userId;
   const ProfileScreen({super.key, this.userId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Tentukan ID siapa yang akan ditampilkan
     final authUid = ref.watch(firebaseAuthProvider).currentUser?.uid;
     final targetUserId = userId ?? authUid;
 
@@ -26,10 +24,8 @@ class ProfileScreen extends ConsumerWidget {
       return Scaffold(appBar: AppBar(), body: const Center(child: Text("Pengguna tidak ditemukan.")));
     }
 
-    // PERBAIKAN 2: Buat flag untuk mengecek apakah ini profil kita sendiri
     final isMyProfile = targetUserId == authUid;
 
-    // Gunakan targetUserId untuk semua provider
     final userProfileAsync = ref.watch(userProfileStreamProvider(targetUserId));
     final userPostsAsync = ref.watch(userPostsStreamProvider(targetUserId));
     final followersCount = ref.watch(followersCountProvider(targetUserId)).value ?? 0;
@@ -66,6 +62,7 @@ class ProfileScreen extends ConsumerWidget {
                     final formattedSaldo = NumberFormat.decimalPattern('id_ID').format(saldo);
 
                     return <PopupMenuEntry<String>>[
+                      // SALDO INFO
                       PopupMenuItem<String>(
                         enabled: false,
                         child: Padding(
@@ -90,16 +87,16 @@ class ProfileScreen extends ConsumerWidget {
                       ),
                       const PopupMenuDivider(),
 
-                      // Tombol Top Up
+                      // TOP UP
                       const PopupMenuItem<String>(
                         value: 'topup',
                         child: ListTile(
-                          leading: Icon(Icons.add_card),
+                          leading: Icon(Icons.add_card, color: Colors.green),
                           title: Text('Top Up Saldo'),
                         ),
                       ),
 
-                      // Status Verifikasi
+                      // VERIFICATION STATUS
                       if (verificationStatus == 'verified')
                         const PopupMenuItem<String>(
                           enabled: false,
@@ -120,18 +117,70 @@ class ProfileScreen extends ConsumerWidget {
                         const PopupMenuItem<String>(
                           value: 'verification',
                           child: ListTile(
-                            leading: Icon(Icons.security),
+                            leading: Icon(Icons.security, color: Colors.blue),
                             title: Text('Verifikasi Akun'),
                           ),
                         ),
 
                       const PopupMenuDivider(),
 
-                      // ✅ TAMBAHKAN MENU RIWAYAT
+                      // ✅ BUSINESS SECTION - TAMBAHAN BARU
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Text(
+                            'Bisnis & Pesanan',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ✅ LIST INTERESTED ORDER - MENU BARU
+                      const PopupMenuItem<String>(
+                        value: 'list-interested-order',
+                        child: ListTile(
+                          leading: Icon(Icons.assignment_turned_in, color: Colors.orange),
+                          title: Text('List Pesanan'),
+                          subtitle: Text('Kelola pesanan masuk'),
+                        ),
+                      ),
+
+                      // CART
+                      const PopupMenuItem<String>(
+                        value: 'cart',
+                        child: ListTile(
+                          leading: Icon(Icons.shopping_cart, color: Colors.blue),
+                          title: Text('Keranjang'),
+                        ),
+                      ),
+
+                      const PopupMenuDivider(),
+
+                      // HISTORY SECTION
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4.0),
+                          child: Text(
+                            'Riwayat',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+
                       const PopupMenuItem<String>(
                         value: 'transaction-history',
                         child: ListTile(
-                          leading: Icon(Icons.history),
+                          leading: Icon(Icons.history, color: Colors.green),
                           title: Text('Riwayat Transaksi'),
                         ),
                       ),
@@ -139,14 +188,22 @@ class ProfileScreen extends ConsumerWidget {
                       const PopupMenuItem<String>(
                         value: 'request-history',
                         child: ListTile(
-                          leading: Icon(Icons.request_page),
+                          leading: Icon(Icons.request_page, color: Colors.purple),
                           title: Text('Riwayat Request'),
+                        ),
+                      ),
+
+                      const PopupMenuItem<String>(
+                        value: 'return-response-list',
+                        child: ListTile(
+                          leading: Icon(Icons.assignment_return, color: Colors.red),
+                          title: Text('Return Response'),
                         ),
                       ),
 
                       const PopupMenuDivider(),
 
-                      // Tombol Logout
+                      // LOGOUT
                       const PopupMenuItem<String>(
                         value: 'logout',
                         child: ListTile(
@@ -157,18 +214,32 @@ class ProfileScreen extends ConsumerWidget {
                     ];
                   },
                   onSelected: (value) {
-                    if (value == 'topup') {
-                      GoRouter.of(context).push('/top-up');
-                    } else if (value == 'verification') {
-                      GoRouter.of(context).push('/verification');
-                    } else if (value == 'transaction-history') {
-                      GoRouter.of(context).push('/transaction-history');
-                    } else if (value == 'request-history') {
-                      GoRouter.of(context).push('/request-history');
-                    }else if (value == 'return-response-list') {
-                      GoRouter.of(context).push('/return-response-list');
-                    } else if (value == 'logout') {
-                      ref.read(authProvider.notifier).logout();
+                    // ✅ HANDLE NAVIGATION - TAMBAHKAN CASE BARU
+                    switch (value) {
+                      case 'topup':
+                        context.push('/top-up');
+                        break;
+                      case 'verification':
+                        context.push('/verification');
+                        break;
+                      case 'list-interested-order': // ✅ CASE BARU
+                        context.push('/list-interested-order');
+                        break;
+                      case 'cart':
+                        context.push('/cart');
+                        break;
+                      case 'transaction-history':
+                        context.push('/transaction-history');
+                        break;
+                      case 'request-history':
+                        context.push('/request-history');
+                        break;
+                      case 'return-response-list':
+                        context.push('/return-response-list');
+                        break;
+                      case 'logout':
+                        ref.read(authProvider.notifier).logout();
+                        break;
                     }
                   },
                 );
@@ -190,7 +261,6 @@ class ProfileScreen extends ConsumerWidget {
                         return const Text('Gagal memuat profil.');
                       }
                       final userData = userDoc.data() as Map<String, dynamic>;
-                      // PERBAIKAN 4: Kirim flag dan ID ke header
                       return _buildProfileHeader(
                         context: context,
                         username: userData['username'] ?? 'Tanpa Nama',
@@ -222,13 +292,10 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ];
           },
-
           body: TabBarView(
             children: [
               _buildGrid(asyncValue: userPostsAsync, emptyMessage: "Belum ada postingan jastip.", errorMessage: "Gagal memuat postingan."),
-              // PERBAIKAN: Konten Tab Request
               _buildGrid(asyncValue: userRequestsAsync, emptyMessage: "Belum ada postingan request.", errorMessage: "Gagal memuat request."),
-              // PERBAIKAN: Konten Tab Shorts
               userShortsAsync.when(
                 data: (snapshot) {
                   if (snapshot.docs.isEmpty) return const Center(child: Text('Belum ada shorts.'));
@@ -246,7 +313,6 @@ class ProfileScreen extends ConsumerWidget {
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, s) => const Center(child: Text('Gagal memuat shorts')),
               ),
-              // Konten Tab Live
               userLiveHistoryAsync.when(
                 data: (lives) {
                   if (lives.docs.isEmpty) return const Center(child: Text('Belum ada riwayat siaran.'));
@@ -281,7 +347,6 @@ class ProfileScreen extends ConsumerWidget {
     required String emptyMessage,
     required String errorMessage,
   }) {
-
     return asyncValue.when(
       data: (snapshot) {
         if (snapshot.docs.isEmpty) {
@@ -292,7 +357,6 @@ class ProfileScreen extends ConsumerWidget {
               crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
           itemCount: snapshot.docs.length,
           itemBuilder: (context, index) {
-            // Ambil seluruh dokumen post, bukan hanya datanya
             final postDoc = snapshot.docs[index];
             final post = postDoc.data() as Map<String, dynamic>;
             final imageUrls = post['imageUrls'] as List<dynamic>?;
@@ -301,12 +365,10 @@ class ProfileScreen extends ConsumerWidget {
               return Container(
                   color: Colors.grey.shade200,
                   child: const Icon(Icons.image_not_supported));
-
             }
-            // PERBAIKAN: Bungkus gambar dengan GestureDetector
+
             return GestureDetector(
               onTap: () {
-                // Navigasi ke halaman detail dengan mengirim ID post
                 context.push('/post-detail/${postDoc.id}');
               },
               child: Image.network(imageUrls[0],
@@ -321,7 +383,6 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  // PERBAIKAN 5: Modifikasi _buildProfileHeader untuk menampilkan tombol dinamis
   Widget _buildProfileHeader({
     required BuildContext context,
     required String username,
@@ -367,9 +428,7 @@ class ProfileScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 10),
 
-        // Logika untuk tombol dinamis
         if (isMyProfile)
-        // Jika ini profilku, tampilkan tombol Edit Profil
           ElevatedButton(
             onPressed: () {},
             style: ElevatedButton.styleFrom(
@@ -378,30 +437,25 @@ class ProfileScreen extends ConsumerWidget {
             child: const Text('Edit Profil'),
           )
         else
-        // Jika ini profil orang lain, tampilkan tombol Follow dan Message
           Row(
             children: [
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    // TODO: Tambahkan logika Follow
-                  },
+                  onPressed: () {},
                   child: const Text('Follow'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Consumer( // PERBAIKAN: Bungkus dengan Consumer
+                child: Consumer(
                   builder: (context, ref, child) {
                     return OutlinedButton(
                       onPressed: () async {
                         try {
-                          // Panggil fungsi untuk membuat/mendapatkan chat room
                           final chatRoomId = await ref
                               .read(chatNotifierProvider.notifier)
                               .createOrGetChatRoom(targetUserId);
 
-                          // Setelah berhasil, baru navigasi ke halaman chat
                           context.push('/chat/$targetUserId', extra: {
                             'username': username,
                             'chatRoomId': chatRoomId,
@@ -420,10 +474,10 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ],
           ),
-
       ],
     );
   }
+
   Widget _buildStatColumn(String label, String count) {
     return Column(
       children: [

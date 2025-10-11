@@ -23,7 +23,6 @@ class AuthState {
   }
 }
 
-// StateNotifier untuk mengelola state dan logika autentikasi
 class AuthNotifier extends StateNotifier<AuthState> {
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -112,6 +111,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null); // Optional: set loading saat logout
     try {
       await _auth.signOut();
+      
       state = state.copyWith(isLoading: false); // Logout berhasil
       // authStateChangesProvider akan otomatis mengupdate & GoRouter redirect ke login
     } catch (e) {

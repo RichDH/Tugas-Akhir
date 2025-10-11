@@ -1,10 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../../app/providers/firebase_providers.dart';
 import '../../domain/entities/post.dart';
 
 // ✅ PROVIDER UNTUK GET POST BY ID
 final postByIdProvider = StreamProvider.family<Post?, String>((ref, postId) {
+  final isAuthenticated = ref.watch(isAuthenticatedProvider);
+  if (!isAuthenticated) return Stream.value(null);
+
   return FirebaseFirestore.instance
       .collection('posts')
       .doc(postId)
@@ -15,9 +19,10 @@ final postByIdProvider = StreamProvider.family<Post?, String>((ref, postId) {
   });
 });
 
-// ✅ TAMBAHKAN DI post_provider.dart
+// ✅ PERBAIKAN USER REQUESTS PROVIDER
 final userRequestsProvider = StreamProvider.family<List<Post>, String>((ref, userId) {
-  if (userId.isEmpty) return Stream.value([]);
+  final isAuthenticated = ref.watch(isAuthenticatedProvider);
+  if (!isAuthenticated || userId.isEmpty) return Stream.value([]);
 
   return FirebaseFirestore.instance
       .collection('posts')
@@ -37,31 +42,42 @@ final userRequestsProvider = StreamProvider.family<List<Post>, String>((ref, use
   });
 });
 
-
-// ✅ PROVIDER UNTUK GET SEMUA POSTS
+// ✅ PERBAIKAN POSTS PROVIDER - YANG UTAMA
 final postsProvider = StreamProvider<List<Post>>((ref) {
-  return FirebaseFirestore.instance
-      .collection('posts')
-      .orderBy('createdAt', descending: true)
-      .snapshots()
-      .map((snapshot) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  // ✅ CEK AUTHENTICATION STATE DULU
+  final isAuthenticated = ref.watch(isAuthenticatedProvider);
+  final currentUser = ref.watch(currentUserProvider);
 
-    return snapshot.docs.map((doc) {
-      final data = doc.data();
-      final likedBy = List<String>.from(data['likedBy'] ?? []);
-      final isLiked = likedBy.contains(currentUserId);
+  // ✅ JIKA BELUM LOGIN, RETURN EMPTY STREAM
+  if (!isAuthenticated || currentUser == null) {
+    return Stream.value(<Post>[]);
+  }
 
-      // Create post dengan isLiked yang benar
-      final post = Post.fromFirestore(doc);
-      return post.copyWith(isLiked: isLiked);
-    }).toList();
+  // ✅ DELAY SEBENTAR UNTUK MEMASTIKAN AUTH STATE STABLE
+  return Stream.fromFuture(
+      Future.delayed(const Duration(milliseconds: 500))
+  ).asyncExpand((_) {
+    return FirebaseFirestore.instance
+        .collection('posts')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      final currentUserId = currentUser.uid;
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        final likedBy = List<String>.from(data['likedBy'] ?? []);
+        final isLiked = likedBy.contains(currentUserId);
+
+        // Create post dengan isLiked yang benar
+        final post = Post.fromFirestore(doc);
+        return post.copyWith(isLiked: isLiked);
+      }).toList();
+    });
   });
-})
+});
 
-;
-
-// ✅ POST NOTIFIER UNTUK ACTIONS
+// REST OF THE CODE REMAINS THE SAME...
 final postNotifierProvider = StateNotifierProvider<PostNotifier, AsyncValue<void>>((ref) {
   return PostNotifier();
 });
@@ -99,7 +115,6 @@ class PostNotifier extends StateNotifier<AsyncValue<void>> {
         }
       });
     } catch (e) {
-      // Handle error silently or show snackbar
       print('Error toggling like: $e');
     }
   }
@@ -170,9 +185,8 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw Exception('User not authenticated');
 
-      // TODO: Upload files dan dapatkan URLs
-      final imageUrls = <String>[]; // Placeholder - implement file upload
-      String? videoUrl; // Placeholder - implement file upload
+      final imageUrls = <String>[];
+      String? videoUrl;
 
       final postData = {
         'title': title,
