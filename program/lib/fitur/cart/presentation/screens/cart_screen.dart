@@ -1,156 +1,650 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:program/fitur/cart/presentation/providers/cart_provider.dart';
-import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
-import '../../domain/entities/cart_item.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../providers/cart_provider.dart';
 
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cartAsync = ref.watch(cartProvider);
+    final cartItemsAsync = ref.watch(cartProvider);
+    final cartNotifier = ref.read(cartProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Keranjang')),
-      body: cartAsync.when(
-        data: (items) {
-          if (items.isEmpty) {
-            return const Center(child: Text('Keranjang kosong'));
-          }
-          return ListView.builder(
-            itemCount: items.length,
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return _CartItemTile(
-                item: item,
-                onRemove: () => ref.read(cartProvider.notifier).removeFromCart(item.id),
-              );
-            },
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, s) => Center(child: Text('Error: $e')),
+      appBar: AppBar(
+        title: const Text('Keranjang'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
-      bottomNavigationBar: cartAsync.when(
-        data: (items) {
-          if (items.isEmpty) return const SizedBox();
-          final total = items.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
-          return Container(
-            padding: const EdgeInsets.all(16),
-            child: ElevatedButton(
-              onPressed: () => _checkout(context, ref, items),
-              child: Text('Bayar Semua (Rp ${total.toStringAsFixed(0)})'),
-            ),
+      body: cartItemsAsync.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.error_outline,
+                size: 64,
+                color: Colors.red,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Error: $error',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  ref.refresh(cartProvider);
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+        data: (cartItems) {
+          if (cartItems.isEmpty) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.shopping_cart_outlined,
+                    size: 64,
+                    color: Colors.grey,
+                  ),
+                  SizedBox(height: 16),
+                  Text(
+                    'Keranjang kosong',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: cartItems.length,
+                  itemBuilder: (context, index) {
+                    final item = cartItems[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            // ✅ ITEM IMAGE DENGAN SUPPORT SHORTS THUMBNAIL
+                            _buildItemImage(context, item),
+                            const SizedBox(width: 16),
+
+                            // Item details
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.title,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Penjual: ${item.sellerUsername}',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    NumberFormat.currency(
+                                      locale: 'id_ID',
+                                      symbol: 'Rp ',
+                                      decimalDigits: 0,
+                                    ).format(item.price),
+                                    style: const TextStyle(
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+
+                                  // Quantity controls
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        onPressed: item.quantity > 1
+                                            ? () => cartNotifier.updateQuantity(
+                                            item.id,
+                                            item.quantity - 1
+                                        )
+                                            : null,
+                                        icon: const Icon(Icons.remove_circle_outline),
+                                        iconSize: 20,
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(color: Colors.grey),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          '${item.quantity}',
+                                          style: const TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: () => cartNotifier.updateQuantity(
+                                            item.id,
+                                            item.quantity + 1
+                                        ),
+                                        icon: const Icon(Icons.add_circle_outline),
+                                        iconSize: 20,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            // Delete button
+                            IconButton(
+                              onPressed: () => _showDeleteConfirmation(
+                                context,
+                                cartNotifier,
+                                item.id,
+                                item.title,
+                              ),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // ✅ BOTTOM CHECKOUT SECTION DENGAN CEK SALDO
+              _buildCheckoutSection(context, cartItems, cartNotifier),
+            ],
           );
         },
-        loading: () => const SizedBox(),
-        error: (e, s) => const SizedBox(),
       ),
     );
   }
 
-  Future<void> _checkout(BuildContext context, WidgetRef ref, List<CartItem> items) async {
-    final sellers = <String, List<CartItem>>{};
-    for (var item in items) {
-      sellers.putIfAbsent(item.sellerId, () => []).add(item);
-    }
+  // ✅ BUILD ITEM IMAGE DENGAN SUPPORT SHORTS THUMBNAIL
+  Widget _buildItemImage(BuildContext context, item) {
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('posts').doc(item.postId).get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
 
-    List<String> createdTransactionIds = [];
+        final postData = snapshot.data!.data() as Map<String, dynamic>?;
+        final postType = postData?['type']?.toString() ?? '';
+        final videoUrl = postData?['videoUrl'] as String?;
+        final imageUrls = postData?['imageUrls'] as List<dynamic>?;
 
-    for (var entry in sellers.entries) {
-      final sellerId = entry.key;
-      final sellerItems = entry.value;
-      final totalAmount = sellerItems.fold(0.0, (sum, item) => sum + (item.price * item.quantity));
+        // ✅ JIKA POST ADALAH SHORTS DAN ADA VIDEO
+        if (postType.contains('short') && videoUrl != null && videoUrl.isNotEmpty) {
+          return _buildShortsVideoThumbnail(videoUrl);
+        }
 
-      // Buat transaksi dan simpan ID-nya
-      final transactionId = await ref.read(transactionProvider.notifier).createTransactionAndGetId(
-        postId: sellerItems[0].postId, // Ambil postId pertama sebagai representasi
-        buyerId: FirebaseAuth.instance.currentUser!.uid,
-        sellerId: sellerId,
-        amount: totalAmount,
-        isEscrow: true,
-        escrowAmount: totalAmount,
-      );
+        // ✅ JIKA ADA IMAGE URL DARI ITEM ATAU POST
+        String? imageUrl = item.imageUrl;
+        if ((imageUrl == null || imageUrl.isEmpty) && imageUrls != null && imageUrls.isNotEmpty) {
+          imageUrl = imageUrls.first as String?;
+        }
 
-      if (transactionId != null) {
-        createdTransactionIds.add(transactionId);
-      }
-    }
-
-    ref.read(cartProvider.notifier).clearCart();
-    _showSuccessDialog(context, 'Transaksi berhasil dibuat!\nSilakan tunggu konfirmasi dari jastiper.');
-
-    // ✅ Arahkan ke riwayat transaksi (lebih aman)
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (context.mounted) {
-      GoRouter.of(context).push('/transaction-history');
-    }
-    // Jika ingin ke detail transaksi pertama:
-    // if (createdTransactionIds.isNotEmpty) {
-    //   GoRouter.of(context).push('/transaction-detail/${createdTransactionIds[0]}');
-    // } else {
-    //   Navigator.pop(context);
-    // }
-
-    // Untuk skripsi, lebih baik ke halaman riwayat
-    Navigator.pop(context);
+        return _buildRegularImage(imageUrl);
+      },
+    );
   }
 
-  void _showSuccessDialog(BuildContext context, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Icon(Icons.check_circle, color: Colors.green, size: 64),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+  // ✅ BUILD SHORTS VIDEO THUMBNAIL (INSPIRASI DARI PROFILE_SCREEN)
+  Widget _buildShortsVideoThumbnail(String videoUrl) {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          // Video placeholder/thumbnail
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 80,
+              height: 80,
+              color: Colors.grey[800],
+              child: const Icon(
+                Icons.play_circle_filled,
+                color: Colors.white,
+                size: 32,
+              ),
+            ),
+          ),
+          // Overlay shorts indicator
+          Positioned(
+            bottom: 4,
+            right: 4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'Shorts',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
-}
 
-class _CartItemTile extends StatelessWidget {
-  final CartItem item;
-  final VoidCallback onRemove;
+  // ✅ BUILD REGULAR IMAGE
+  Widget _buildRegularImage(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty || !_isValidUrl(imageUrl)) {
+      return Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Icon(
+          Icons.shopping_bag,
+          color: Colors.grey,
+          size: 32,
+        ),
+      );
+    }
 
-  const _CartItemTile({required this.item, required this.onRemove});
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        width: 80,
+        height: 80,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Container(
+          width: 80,
+          height: 80,
+          color: Colors.grey[200],
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+        errorWidget: (context, url, error) => Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.broken_image,
+            color: Colors.grey,
+            size: 32,
+          ),
+        ),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.all(8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Image.network(item.imageUrl, width: 60, height: 60, fit: BoxFit.cover),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.title, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text('Rp ${item.price.toStringAsFixed(0)}'),
-                  Text('Qty: ${item.quantity}'),
-                  if (item.deadline != null)
-                    Text(
-                      'Deadline: ${DateFormat('dd/MM/yyyy HH:mm').format(item.deadline!.toDate())}',
-                      style: const TextStyle(color: Colors.red, fontSize: 12),
-                    ),
-                ],
+  bool _isValidUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.hasScheme && uri.host.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ✅ CHECKOUT SECTION DENGAN CEK SALDO
+  Widget _buildCheckoutSection(BuildContext context, List cartItems, cartNotifier) {
+    final totalAmount = cartItems.fold<double>(
+      0,
+          (sum, item) => sum + (item.price * item.quantity),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total:',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                NumberFormat.currency(
+                  locale: 'id_ID',
+                  symbol: 'Rp ',
+                  decimalDigits: 0,
+                ).format(totalAmount),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.green,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: cartItems.isNotEmpty
+                  ? () => _processCheckout(context, cartItems, totalAmount, cartNotifier)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              child: Text(
+                'Bayar Semua (${NumberFormat.currency(
+                  locale: 'id_ID',
+                  symbol: 'Rp ',
+                  decimalDigits: 0,
+                ).format(totalAmount)})',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            IconButton(icon: const Icon(Icons.delete), onPressed: onRemove),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ PROCESS CHECKOUT DENGAN CEK SALDO
+  Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Anda harus login terlebih dahulu'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // ✅ CEK SALDO USER
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      final userBalance = (userDoc.data()?['balance'] as num?)?.toDouble() ?? 0.0;
+
+      if (userBalance < totalAmount) {
+        // ✅ SALDO TIDAK MENCUKUPI
+        _showInsufficientBalanceDialog(context, totalAmount, userBalance);
+        return;
+      }
+
+      // ✅ SALDO MENCUKUPI, PROSES CHECKOUT
+      await _createCartTransaction(cartItems, totalAmount, user.uid);
+
+      // ✅ KURANGI SALDO USER
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
+        'balance': FieldValue.increment(-totalAmount),
+      });
+
+      // ✅ HAPUS SEMUA ITEM DARI CART
+      for (final item in cartItems) {
+        cartNotifier.removeFromCart(item.id);
+      }
+
+      // ✅ TAMPILKAN POPUP SUKSES
+      _showCartCheckoutSuccessDialog(context, totalAmount);
+
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal memproses checkout: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ CREATE TRANSACTION DARI CART
+  Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId) async {
+    // Group items by seller untuk membuat transaksi per penjual
+    final Map<String, List> itemsBySeller = {};
+
+    for (final item in cartItems) {
+      if (!itemsBySeller.containsKey(item.sellerId)) {
+        itemsBySeller[item.sellerId] = [];
+      }
+      itemsBySeller[item.sellerId]!.add(item);
+    }
+
+    // Buat transaksi untuk setiap penjual
+    for (final sellerId in itemsBySeller.keys) {
+      final sellerItems = itemsBySeller[sellerId]!;
+      final sellerTotal = sellerItems.fold<double>(
+        0,
+            (sum, item) => sum + (item.price * item.quantity),
+      );
+
+      await FirebaseFirestore.instance.collection('transactions').add({
+        'buyerId': userId,
+        'sellerId': sellerId,
+        'amount': sellerTotal,
+        'status': 'paid',
+        'createdAt': FieldValue.serverTimestamp(),
+        'items': sellerItems.map((item) => {
+          'postId': item.postId,
+          'title': item.title,
+          'price': item.price,
+          'quantity': item.quantity,
+          'imageUrl': item.imageUrl,
+        }).toList(),
+        'isEscrow': true,
+        'escrowAmount': sellerTotal,
+        'type': 'cart_checkout',
+      });
+    }
+  }
+
+  // ✅ DIALOG SALDO TIDAK MENCUKUPI (SAMA SEPERTI POST DETAIL)
+  void _showInsufficientBalanceDialog(BuildContext context, double totalAmount, double userBalance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Saldo Tidak Mencukupi'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_balance_wallet,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Saldo Anda: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(userBalance)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              'Total yang dibutuhkan: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Kurang: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount - userBalance)}',
+              style: const TextStyle(fontSize: 16, color: Colors.red),
+            ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Navigate to top-up page
+              context.push('/topup');
+            },
+            child: const Text('Top Up'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ DIALOG CHECKOUT BERHASIL
+  void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Checkout Berhasil'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.check_circle,
+              size: 64,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Semua item berhasil dibeli!',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Keranjang telah dikosongkan',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/transaction-history');
+            },
+            child: const Text('Lihat Riwayat'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(
+      BuildContext context,
+      cartNotifier,
+      String itemId,
+      String itemTitle,
+      ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Item'),
+        content: Text('Apakah Anda yakin ingin menghapus "$itemTitle" dari keranjang?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              cartNotifier.removeFromCart(itemId);
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Item dihapus dari keranjang'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

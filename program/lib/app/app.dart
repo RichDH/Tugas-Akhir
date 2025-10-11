@@ -158,8 +158,6 @@ final goRouter = Provider<GoRouter>((ref) {
         builder: (context, state, navigationShell) {
           return ScaffoldWithNavBar(navigationShell: navigationShell);
         },
-        // PERBAIKAN: Hanya ada 4 branch, sesuai jumlah tab yang punya halaman sendiri.
-        // Tombol 'Post' (index 2) tidak punya branch di sini.
         branches: [
           // Branch 0: Untuk Tab 'Feed' (index 0)
           StatefulShellBranch(

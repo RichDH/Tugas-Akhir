@@ -112,6 +112,8 @@ class CartNotifier extends StateNotifier<AsyncValue<List<CartItem>>> {
     }
   }
 
+
+
   Future<void> clearCart() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;

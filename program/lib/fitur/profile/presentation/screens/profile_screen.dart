@@ -162,10 +162,8 @@ class ProfileScreen extends ConsumerWidget {
                     } else if (value == 'verification') {
                       GoRouter.of(context).push('/verification');
                     } else if (value == 'transaction-history') {
-                      // Navigasi ke halaman Riwayat Transaksi
                       GoRouter.of(context).push('/transaction-history');
                     } else if (value == 'request-history') {
-                      // Navigasi ke halaman Riwayat Request
                       GoRouter.of(context).push('/request-history');
                     }else if (value == 'return-response-list') {
                       GoRouter.of(context).push('/return-response-list');

@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -373,16 +374,42 @@ class PostWidget extends ConsumerWidget {
     );
   }
 
+  // ✅ GANTI METHOD _buildRequestButton DI FEED_SCREEN.DART
   Widget _buildRequestButton(BuildContext context, WidgetRef ref, Post post) {
     final now = DateTime.now();
     final isExpired = post.deadline?.toDate().isBefore(now) ?? false;
     final currentOffers = post.currentOffers;
     final maxOffers = post.maxOffers ?? 1;
     final isFull = currentOffers >= maxOffers;
-    final isOwnPost = false; // TODO: Check if current user is the post owner
 
-    // Jangan tampilkan tombol jika expired, full, atau post sendiri
+    // ✅ CEK APAKAH POST MILIK USER SENDIRI
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isOwnPost = currentUser?.uid == post.userId;
+
+    // ✅ JANGAN TAMPILKAN TOMBOL JIKA EXPIRED, FULL, ATAU POST SENDIRI
     if (isExpired || isFull || isOwnPost) {
+      // ✅ TAMPILKAN WIDGET ALTERNATIF UNTUK POST SENDIRI
+      if (isOwnPost) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[400]!),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.info_outline, color: Colors.grey, size: 16),
+              SizedBox(width: 4),
+              Text(
+                'Postingan Anda',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      }
       return const SizedBox.shrink();
     }
 
@@ -397,6 +424,7 @@ class PostWidget extends ConsumerWidget {
       child: const Text('Ambil Pesanan'),
     );
   }
+
 
   void _takeOrder(BuildContext context, WidgetRef ref, Post post) {
     // ✅ GUNAKAN PROVIDER YANG SUDAH DIBUAT
