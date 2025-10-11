@@ -1,366 +1,441 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../cart/domain/entities/cart_item.dart';
+import '../../../cart/presentation/providers/cart_provider.dart';
+import '../providers/post_provider.dart';
+import '../widgets/video_player_widgets.dart';
+import 'package:program/fitur/cart/domain/entities/cart_item.dart';
+import '../../../cart/presentation/providers/cart_provider.dart';
 
-import 'package:program/fitur/post/presentation/providers/post_provider.dart';
-import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
-import 'package:program/fitur/chat/presentation/screens/chat_individu.dart';
-import 'package:program/fitur/post/presentation/widgets/video_player_widgets.dart';
-import 'package:program/fitur/cart/presentation/providers/cart_provider.dart';
-
-import '../../../cart/domain/entities/cart_item.dart'; // Tambahkan import ini
-
-class PostDetailScreen extends ConsumerWidget {
+class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
+
   const PostDetailScreen({super.key, required this.postId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final postAsync = ref.watch(postDetailStreamProvider(postId));
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  ConsumerState<PostDetailScreen> createState() => _PostDetailScreenState();
+}
+
+class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
+  final TextEditingController _commentController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final postAsync = ref.watch(postByIdProvider(widget.postId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Detail Postingan")),
+      appBar: AppBar(
+        title: const Text('Detail Postingan'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
       body: postAsync.when(
-        data: (postDoc) {
-          if (!postDoc.exists || postDoc.data() == null) {
-            return const Center(child: Text("Postingan tidak ditemukan."));
+        data: (post) {
+          if (post == null) {
+            return const Center(child: Text('Post tidak ditemukan'));
           }
-          final postData = postDoc.data() as Map<String, dynamic>;
-          final sellerId = postData['userId'] as String? ?? '';
-          final imageUrls = List<String>.from(postData['imageUrls'] ?? []);
-          final videoUrl = postData['videoUrl'] as String?;
-          final likes = List<String>.from(postData['likes'] ?? []);
-          final isLiked = likes.contains(currentUserId);
-          final postType = postData['type'] as String? ?? 'jastip';
-          final price = postData['price'] as num?;
-          final formattedPrice = price != null
-              ? NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(price)
-              : 'Harga tidak tersedia';
 
-          // Ambil username seller dari Firestore
-          final sellerUserAsync = ref.watch(userProvider(sellerId));
+          final formattedPrice = post.price != null
+              ? NumberFormat.currency(
+            locale: 'id_ID',
+            symbol: 'Rp ',
+            decimalDigits: 0,
+          ).format(post.price!)
+              : 'Free';
 
-          // ✅ SIMPAN DATA POST KE VARIABEL LOKAL DI SINI — SEBELUM RETURN
-          final String? title = postData['title'] as String?;
-          final double? priceValue = (postData['price'] as num?)?.toDouble();
-          final List<String> imageUrlsList = List<String>.from(postData['imageUrls'] ?? []);
-          final Timestamp? deadline = postData['deadline'] as Timestamp?;
-
-          return ListView(
+          return Column(
             children: [
-              // Header Pengguna
-              if (sellerId.isNotEmpty)
-                sellerUserAsync.when(
-                  data: (userDoc) {
-                    if (!userDoc.exists) return const SizedBox.shrink();
-                    final userData = userDoc.data() as Map<String, dynamic>;
-                    final sellerUsername = userData['username'] ?? 'Pengguna';
-                    return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.person)),
-                      title: Text(sellerUsername, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(postData['location'] ?? ''),
-                    );
-                  },
-                  loading: () => const ListTile(title: Text("Memuat penjual...")),
-                  error: (e, s) => const ListTile(title: Text("Gagal memuat penjual")),
-                ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header dengan info penjual
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            const CircleAvatar(
+                              radius: 25,
+                              child: Icon(Icons.person),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    post.username,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  Text(
+                                    post.location ?? '',
+                                    style: const TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
-              // Media: Video atau Gambar
-              if (videoUrl != null)
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: VideoPlayerWidget(url: videoUrl),
-                )
-              else if (imageUrlsList.isNotEmpty)
-                Image.network(
-                  imageUrlsList[0],
-                  height: 300,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    return progress == null ? child : const Center(child: CircularProgressIndicator());
-                  },
-                  errorBuilder: (context, error, stackTrace) => const Center(child: Icon(Icons.error)),
-                ),
+                      // Media dengan aspect ratio yang benar
+                      if (post.videoUrl != null)
+                        Container(
+                          width: double.infinity,
+                          height: 300,
+                          color: Colors.black,
+                          child: VideoPlayerWidget(url: post.videoUrl!),
+                        )
+                      else if (post.imageUrls.isNotEmpty)
+                        Container(
+                          width: double.infinity,
+                          height: 300,
+                          color: Colors.black,
+                          child: Image.network(
+                            post.imageUrls[0],
+                            fit: BoxFit.contain, // ✅ Jangan crop gambar portrait
+                            loadingBuilder: (context, child, progress) {
+                              return progress == null
+                                  ? child
+                                  : const Center(child: CircularProgressIndicator());
+                            },
+                            errorBuilder: (context, error, stackTrace) =>
+                            const Center(child: Icon(Icons.error, color: Colors.white)),
+                          ),
+                        ),
 
-              // Tombol Aksi
-              _buildActionButtons(
-                context: context,
-                ref: ref,
-                postId: postId,
-                isLiked: isLiked,
-                postType: postType,
-                currentUserId: currentUserId,
-                sellerId: sellerId,
-                sellerUserAsync: sellerUserAsync,
-                title: title, // ✅ Lewatkan ke button
-                price: priceValue, // ✅ Lewatkan ke button
-                imageUrls: imageUrlsList, // ✅ Lewatkan ke button
-                deadline: deadline, // ✅ Lewatkan ke button
+                      // Detail produk
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              post.title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              formattedPrice,
+                              style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Deskripsi',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(post.description ?? ''),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Jenis: ${post.type.name.toUpperCase()}'),
+                                      Text('Kategori: ${post.category ?? '–'}'),
+                                      if (post.condition != null)
+                                        Text('Kondisi: ${post.condition!.name}'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const Divider(),
+
+                      // Komentar section
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'Komentar',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('posts')
+                            .doc(post.id)
+                            .collection('comments')
+                            .orderBy('createdAt', descending: true)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Center(child: CircularProgressIndicator());
+                          }
+
+                          final comments = snapshot.data!.docs;
+
+                          if (comments.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Text(
+                                'Belum ada komentar. Jadilah yang pertama!',
+                                style: TextStyle(color: Colors.grey),
+                              ),
+                            );
+                          }
+
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: comments.length,
+                            itemBuilder: (context, index) {
+                              final comment = comments[index].data() as Map<String, dynamic>;
+                              return ListTile(
+                                leading: const CircleAvatar(
+                                  radius: 16,
+                                  child: Icon(Icons.person, size: 16),
+                                ),
+                                title: Text(
+                                  comment['username'] ?? 'Anonymous',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Text(comment['text'] ?? ''),
+                                trailing: Text(
+                                  _formatTimestamp(comment['createdAt']),
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+
+                      const SizedBox(height: 100), // Space untuk bottom buttons
+                    ],
+                  ),
+                ),
               ),
 
-              // Detail
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(postData['title'] ?? '', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(postData['description'] ?? ''),
-                    const SizedBox(height: 12),
-                    Text('Jenis: ${postType.toUpperCase()}'),
-                    Text('Kategori: ${postData['category'] ?? '–'}'),
-                    const SizedBox(height: 8),
-                    Text(formattedPrice, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 18)),
+              // ✅ BOTTOM ACTION BUTTONS
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, -2),
+                    ),
                   ],
                 ),
-              ),
+                child: Column(
+                  children: [
+                    // Comment input
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _commentController,
+                            decoration: const InputDecoration(
+                              hintText: 'Tulis komentar...',
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _postComment,
+                          icon: const Icon(Icons.send),
+                          color: Colors.blue,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
 
-              const Divider(height: 24),
+                    // Action buttons
+                    Row(
+                      children: [
+                        // Like button
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              ref.read(postNotifierProvider.notifier).toggleLike(post.id);
+                            },
+                            icon: Icon(
+                              post.isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: post.isLiked ? Colors.red : null,
+                            ),
+                            label: Text('${post.likesCount}'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
 
-              // Komentar
-              InkWell(
-                onTap: () => _showCommentsBottomSheet(context, ref, postId),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  child: Text("Lihat semua komentar", style: TextStyle(color: Colors.grey)),
+                        // Cart button
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              final cartItem = CartItem(
+                                id: '',
+                                postId: post.id,
+                                title: post.title,
+                                price: post.price ?? 0,
+                                imageUrl: post.imageUrls.isNotEmpty ? post.imageUrls[0] : '',
+                                sellerId: post.userId,
+                                sellerUsername: post.username,
+                                addedAt: Timestamp.now(),
+                                deadline: post.deadline,
+                              );
+                              ref.read(cartProvider.notifier).addToCart(cartItem);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Ditambahkan ke keranjang'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.shopping_cart_outlined),
+                            label: const Text('Keranjang'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Order button
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              context.push('/checkout');
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.shopping_bag),
+                            label: const Text('Beli'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text("Error: $err")),
-      ),
-    );
-  }
-
-  Widget _buildActionButtons({
-    required BuildContext context,
-    required WidgetRef ref,
-    required String postId,
-    required bool isLiked,
-    required String postType,
-    required String currentUserId,
-    required String sellerId,
-    required AsyncValue<DocumentSnapshot> sellerUserAsync,
-    required String? title, // ✅ Diterima dari build()
-    required double? price, // ✅ Diterima dari build()
-    required List<String> imageUrls, // ✅ Diterima dari build()
-    required Timestamp? deadline, // ✅ Diterima dari build()
-  }) {
-    if (currentUserId == sellerId || sellerId.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              IconButton(
-                icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, color: isLiked ? Colors.red : null),
-                onPressed: () => ref.read(postNotifierProvider.notifier).toggleLike(postId),
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Error: $error'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.refresh(postByIdProvider(widget.postId)),
+                child: const Text('Retry'),
               ),
-              IconButton(
-                icon: const Icon(Icons.chat_bubble_outline),
-                onPressed: () {
-                  String sellerUsername = 'Penjual';
-                  if (sellerUserAsync.valueOrNull?.exists == true) {
-                    final userData = sellerUserAsync.valueOrNull!.data() as Map<String, dynamic>?;
-                    sellerUsername = userData?['username'] ?? 'Penjual';
-                  }
-
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ChatScreen(
-                        otherUserId: sellerId,
-                        otherUsername: sellerUsername,
-                        postId: postId,
-                        isOfferMode: postType == 'request',
-                      ),
-                    ),
-                  );
-                },
-              ),
-              // ✅ TOMBOL TAMBAH KE KERANJANG (hanya untuk jastip/short)
-              if (postType == 'jastip' || postType == 'short')
-                IconButton(
-                  icon: const Icon(Icons.shopping_cart_outlined),
-                  onPressed: () {
-                    final cartItem = CartItem(
-                      postId: postId,
-                      title: title ?? '',
-                      price: price ?? 0,
-                      imageUrl: imageUrls.isNotEmpty ? imageUrls[0] : '',
-                      sellerId: sellerId,
-                      addedAt: Timestamp.now(),
-                      deadline: deadline, // Ambil deadline dari post
-                    );
-                    ref.read(cartProvider.notifier).addToCart(cartItem);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ditambahkan ke keranjang')));
-                  },
-                ),
             ],
           ),
-          // ✅ TOMBOL BELI SEKARANG (tetap ada)
-          if (postType == 'jastip')
-            ElevatedButton(
-              onPressed: () => _handleOrder(context, ref, postId, sellerId),
-              child: const Text('Beli Sekarang'),
-            )
-          else if (postType == 'request')
-            ElevatedButton(
-              onPressed: () => _handleMakeOffer(context, ref, postId, sellerId),
-              child: const Text('Buat Penawaran'),
-            ),
-        ],
-      ),
-    );
-  }
-
-  void _handleOrder(BuildContext context, WidgetRef ref, String postId, String sellerId) async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return;
-
-    final postDoc = await FirebaseFirestore.instance.collection('posts').doc(postId).get();
-    final postData = postDoc.data() as Map<String, dynamic>?;
-    if (postData == null) return;
-
-    final amount = (postData['price'] as num?)?.toDouble() ?? 0;
-    if (amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Harga tidak valid')));
-      return;
-    }
-
-    await ref.read(transactionProvider.notifier).createTransaction(
-      postId: postId,
-      buyerId: currentUser.uid,
-      sellerId: sellerId,
-      amount: amount,
-      isEscrow: true,
-      escrowAmount: amount,
-    );
-
-    _showSuccessDialog(context, 'Transaksi berhasil dibuat!\nSilakan tunggu konfirmasi dari jastiper.');
-    if (context.mounted) Navigator.pop(context);
-  }
-
-// Helper: Popup sukses
-  void _showSuccessDialog(BuildContext context, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Icon(Icons.check_circle, color: Colors.green, size: 64),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleMakeOffer(BuildContext context, WidgetRef ref, String postId, String sellerId) {
-    String sellerUsername = 'Penjual';
-    final sellerUserDoc = ref.read(userProvider(sellerId)).valueOrNull;
-    if (sellerUserDoc?.exists == true) {
-      final userData = sellerUserDoc!.data() as Map<String, dynamic>?;
-      sellerUsername = userData?['username'] ?? 'Penjual';
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          otherUserId: sellerId,
-          otherUsername: sellerUsername,
-          postId: postId,
-          isOfferMode: true,
         ),
       ),
     );
   }
 
-  void _showCommentsBottomSheet(BuildContext context, WidgetRef ref, String postId) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final commentsAsync = ref.watch(commentsStreamProvider(postId));
-        final commentController = TextEditingController();
+  String _formatTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '';
 
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.7,
-            child: Column(
-              children: [
-                const Text("Komentar", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const Divider(),
-                Expanded(
-                  child: commentsAsync.when(
-                       data: (snapshot) {
-                      if (snapshot.docs.isEmpty) {
-                        return const Center(child: Text("Belum ada komentar"));
-                      }
-                      return ListView.builder(
-                        itemCount: snapshot.docs.length,
-                        itemBuilder: (context, index) {
-                          final comment = snapshot.docs[index].data() as Map<String, dynamic>;
-                          return ListTile(
-                            leading: const CircleAvatar(child: Icon(Icons.person)),
-                            title: Text(comment['username'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(comment['text'] ?? ''),
-                          );
-                        },
-                      );
-                    },
-                    loading: () => const Center(child: CircularProgressIndicator()),
-                    error: (e, s) => Center(child: Text("Error: $e")),
-                  ),
-                ),
-                const Divider(),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: commentController,
-                        decoration: InputDecoration(
-                          hintText: 'Tambahkan komentar...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.send),
-                      onPressed: () {
-                        if (commentController.text.trim().isNotEmpty) {
-                          ref.read(postNotifierProvider.notifier).addComment(postId, commentController.text);
-                          commentController.clear();
-                        }
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+    try {
+      DateTime dateTime;
+      if (timestamp is Timestamp) {
+        dateTime = timestamp.toDate();
+      } else if (timestamp is String) {
+        dateTime = DateTime.parse(timestamp);
+      } else {
+        return '';
+      }
+
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 0) {
+        return '${difference.inDays}h';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}j';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m';
+      } else {
+        return 'Baru saja';
+      }
+    } catch (e) {
+      return '';
+    }
+  }
+
+  Future<void> _postComment() async {
+    if (_commentController.text.trim().isEmpty) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(widget.postId)
+          .collection('comments')
+          .add({
+        'text': _commentController.text.trim(),
+        'username': 'Current User',
+        'userId': 'current_user_id',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      await FirebaseFirestore.instance
+          .collection('posts')
+          .doc(widget.postId)
+          .update({
+        'commentsCount': FieldValue.increment(1),
+      });
+
+      _commentController.clear();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Komentar berhasil ditambahkan'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengirim komentar: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
   }
 }

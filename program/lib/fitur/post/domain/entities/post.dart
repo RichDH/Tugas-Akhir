@@ -1,13 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Jenis postingan yang didukung:
-/// - jastip: Jual barang langsung oleh jastiper
-/// - request: Permintaan barang oleh pembeli
-/// - short: Video pendek promosi (mirip TikTok/Reels)
 enum PostType { jastip, request, short }
-
-/// Kondisi barang yang dijual/diminta
 enum Condition { baru, bekas }
 
 class Post extends Equatable {
@@ -16,31 +10,36 @@ class Post extends Equatable {
   final String username;
   final PostType type;
   final String title;
-  final String description;
-  final String category;
-  final double? price; // Hanya untuk jastip & short
-  final String location; // Lokasi umum (misal: "Surabaya")
-  final String locationCity; // Nama kota/kabupaten (untuk filter & GeoNames)
-  final double? locationLat; // Latitude dari GeoNames API
-  final double? locationLng; // Longitude dari GeoNames API
-  final Condition condition;
+  final String? description;
+  final String? category;
+  final double? price;
+  final String? location;
+  final String? locationCity;
+  final double? locationLat;
+  final double? locationLng;
+  final Condition? condition;
   final String? brand;
   final String? size;
-  final String? weight;
+  final String? weight; // ✅ UBAH KE STRING (BUKAN DOUBLE)
   final String? additionalNotes;
-  final List<String> imageUrls; // Boleh kosong jika ada video
-  final String? videoUrl; // Boleh null jika hanya gambar
+  final List<String> imageUrls;
+  final String? videoUrl;
   final Timestamp createdAt;
+  final Timestamp updatedAt;
+
+  // Properties untuk interactions
+  final bool isLiked;
   final int likesCount;
   final int commentsCount;
-  final int offersCount;
-  final bool isActive;
+  final int currentOffers;
+  final List<String> likedBy;
 
-  // === Field khusus untuk PostType.request ===
-  final String? syarat; // Toleransi kenaikan harga (misal: "Maks 10%")
-  final int? maxOffers; // Batas jumlah penawaran dari jastiper
-  final Timestamp? deadline; // Batas waktu request
-  final bool isPriceNegotiable; // Apakah harga bisa dinegosiasi
+  // Properties khusus untuk request
+  final String? syarat;
+  final int? maxOffers;
+  final Timestamp? deadline;
+  final bool isPriceNegotiable;
+  final bool isActive;
 
   const Post({
     required this.id,
@@ -48,63 +47,81 @@ class Post extends Equatable {
     required this.username,
     required this.type,
     required this.title,
-    required this.description,
-    required this.category,
+    this.description,
+    this.category,
     this.price,
-    required this.location,
-    required this.locationCity,
+    this.location,
+    this.locationCity,
     this.locationLat,
     this.locationLng,
-    required this.condition,
+    this.condition,
     this.brand,
     this.size,
-    this.weight,
+    this.weight, // String bukan double
     this.additionalNotes,
     required this.imageUrls,
     this.videoUrl,
     required this.createdAt,
+    required this.updatedAt,
+    this.isLiked = false,
     this.likesCount = 0,
     this.commentsCount = 0,
-    this.offersCount = 0,
-    this.isActive = true,
+    this.currentOffers = 0,
+    this.likedBy = const [],
     this.syarat,
     this.maxOffers,
     this.deadline,
     this.isPriceNegotiable = false,
+    this.isActive = true,
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+
     return Post(
       id: doc.id,
-      userId: data['userId'] as String,
-      username: data['username'] as String,
+      userId: data['userId'] as String? ?? '',
+      username: data['username'] as String? ?? '',
       type: _parsePostType(data['type'] as String?),
-      title: data['title'] as String,
-      description: data['description'] as String,
-      category: data['category'] as String,
-      price: (data['price'] as num?)?.toDouble(),
-      location: data['location'] as String,
-      locationCity: data['locationCity'] as String,
-      locationLat: (data['locationLat'] as num?)?.toDouble(),
-      locationLng: (data['locationLng'] as num?)?.toDouble(),
+      title: data['title'] as String? ?? '',
+      description: data['description'] as String?,
+      category: data['category'] as String?,
+      price: _parseDouble(data['price']), // ✅ SAFE PARSING
+      location: data['location'] as String?,
+      locationCity: data['locationCity'] as String?,
+      locationLat: _parseDouble(data['locationLat']),
+      locationLng: _parseDouble(data['locationLng']),
       condition: _parseCondition(data['condition'] as String?),
       brand: data['brand'] as String?,
       size: data['size'] as String?,
-      weight: data['weight'] as String?,
+      weight: data['weight'] as String?, // ✅ PARSE SEBAGAI STRING
       additionalNotes: data['additionalNotes'] as String?,
       imageUrls: List<String>.from(data['imageUrls'] ?? []),
       videoUrl: data['videoUrl'] as String?,
-      createdAt: data['createdAt'] as Timestamp,
+      createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
+      updatedAt: data['updatedAt'] as Timestamp? ?? Timestamp.now(),
+      isLiked: data['isLiked'] as bool? ?? false,
       likesCount: data['likesCount'] as int? ?? 0,
       commentsCount: data['commentsCount'] as int? ?? 0,
-      offersCount: data['offersCount'] as int? ?? 0,
-      isActive: data['isActive'] as bool? ?? true,
+      currentOffers: data['currentOffers'] as int? ?? 0,
+      likedBy: List<String>.from(data['likedBy'] ?? []),
       syarat: data['syarat'] as String?,
       maxOffers: data['maxOffers'] as int?,
       deadline: data['deadline'] as Timestamp?,
       isPriceNegotiable: data['isPriceNegotiable'] as bool? ?? false,
+      isActive: data['isActive'] as bool? ?? true,
     );
+  }
+
+  // ✅ SAFE DOUBLE PARSING
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value); // ✅ GUNAKAN tryParse BUKAN toDouble()
+    }
+    return null;
   }
 
   static PostType _parsePostType(String? type) {
@@ -118,16 +135,14 @@ class Post extends Equatable {
 
   static Condition _parseCondition(String? condition) {
     if (condition == null) return Condition.baru;
-    if (condition == 'bekas') return Condition.bekas;
-    return Condition.baru;
+    try {
+      return Condition.values.firstWhere((e) => e.name == condition);
+    } catch (e) {
+      return Condition.baru;
+    }
   }
 
   Map<String, dynamic> toFirestore() {
-    // Validasi: minimal ada gambar atau video
-    if (imageUrls.isEmpty && videoUrl == null) {
-      throw Exception('Post harus memiliki gambar atau video.');
-    }
-
     return {
       'userId': userId,
       'username': username,
@@ -140,53 +155,102 @@ class Post extends Equatable {
       'locationCity': locationCity,
       'locationLat': locationLat,
       'locationLng': locationLng,
-      'condition': condition.name,
+      'condition': condition?.name,
       'brand': brand,
       'size': size,
-      'weight': weight,
+      'weight': weight, // String langsung
       'additionalNotes': additionalNotes,
       'imageUrls': imageUrls,
       'videoUrl': videoUrl,
       'createdAt': createdAt,
+      'updatedAt': updatedAt,
       'likesCount': likesCount,
       'commentsCount': commentsCount,
-      'offersCount': offersCount,
-      'isActive': isActive,
+      'currentOffers': currentOffers,
+      'likedBy': likedBy,
       'syarat': syarat,
       'maxOffers': maxOffers,
       'deadline': deadline,
       'isPriceNegotiable': isPriceNegotiable,
+      'isActive': isActive,
     };
+  }
+
+  Post copyWith({
+    String? id,
+    String? userId,
+    String? username,
+    PostType? type,
+    String? title,
+    String? description,
+    String? category,
+    double? price,
+    String? location,
+    String? locationCity,
+    double? locationLat,
+    double? locationLng,
+    Condition? condition,
+    String? brand,
+    String? size,
+    String? weight,
+    String? additionalNotes,
+    List<String>? imageUrls,
+    String? videoUrl,
+    Timestamp? createdAt,
+    Timestamp? updatedAt,
+    bool? isLiked,
+    int? likesCount,
+    int? commentsCount,
+    int? currentOffers,
+    List<String>? likedBy,
+    String? syarat,
+    int? maxOffers,
+    Timestamp? deadline,
+    bool? isPriceNegotiable,
+    bool? isActive,
+  }) {
+    return Post(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      price: price ?? this.price,
+      location: location ?? this.location,
+      locationCity: locationCity ?? this.locationCity,
+      locationLat: locationLat ?? this.locationLat,
+      locationLng: locationLng ?? this.locationLng,
+      condition: condition ?? this.condition,
+      brand: brand ?? this.brand,
+      size: size ?? this.size,
+      weight: weight ?? this.weight,
+      additionalNotes: additionalNotes ?? this.additionalNotes,
+      imageUrls: imageUrls ?? this.imageUrls,
+      videoUrl: videoUrl ?? this.videoUrl,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isLiked: isLiked ?? this.isLiked,
+      likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
+      currentOffers: currentOffers ?? this.currentOffers,
+      likedBy: likedBy ?? this.likedBy,
+      syarat: syarat ?? this.syarat,
+      maxOffers: maxOffers ?? this.maxOffers,
+      deadline: deadline ?? this.deadline,
+      isPriceNegotiable: isPriceNegotiable ?? this.isPriceNegotiable,
+      isActive: isActive ?? this.isActive,
+    );
   }
 
   @override
   List<Object?> get props => [
-    id,
-    userId,
-    username,
-    type,
-    title,
-    description,
-    price,
-    location,
-    locationCity,
-    locationLat,
-    locationLng,
-    condition,
-    brand,
-    size,
-    weight,
-    additionalNotes,
-    imageUrls,
-    videoUrl,
-    createdAt,
-    likesCount,
-    commentsCount,
-    offersCount,
-    isActive,
-    syarat,
-    maxOffers,
-    deadline,
-    isPriceNegotiable,
+    id, userId, username, type, title, description, category,
+    price, location, locationCity, locationLat, locationLng,
+    condition, brand, size, weight, additionalNotes, imageUrls,
+    videoUrl, createdAt, updatedAt, isLiked, likesCount,
+    commentsCount, currentOffers, likedBy, syarat, maxOffers,
+    deadline, isPriceNegotiable, isActive,
   ];
 }

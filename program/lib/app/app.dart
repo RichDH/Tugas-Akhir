@@ -57,13 +57,15 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/jastiper-live', builder: (context, state) => const JastiperLiveScreen()),
       GoRoute(path: '/viewer-live', builder: (context, state) => const ViewerLiveScreen(),
       ),
+      // Tambahkan route ini jika belum ada
       GoRoute(
-        path: '/post/:postId', // :postId adalah parameter ID post
+        path: '/post-detail/:postId',
         builder: (context, state) {
           final postId = state.pathParameters['postId']!;
           return PostDetailScreen(postId: postId);
         },
       ),
+
 
       GoRoute(
         path: '/chat-list',

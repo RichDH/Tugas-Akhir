@@ -7,44 +7,70 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/post/domain/entities/post.dart';
 import 'package:program/fitur/post/presentation/providers/post_provider.dart';
 
+import '../../../feed/presentation/screens/feed_screen.dart';
+
 class RequestHistoryScreen extends ConsumerWidget {
   const RequestHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUserId = ref.read(firebaseAuthProvider).currentUser?.uid ?? '';
-    final postsAsync = ref.watch(postListStreamProvider); // Sudah didefinisikan di post_provider.dart
+    // ✅ GUNAKAN PROVIDER KHUSUS
+    final requestsAsync = ref.watch(userRequestsProvider(currentUserId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Riwayat Request')),
-      body: postsAsync.when(
-        data: (posts) {
-          final requests = posts.where((post) => post.type == 'request' && post.userId == currentUserId).toList();
-
+      appBar: AppBar(
+        title: const Text('Riwayat Request'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+      body: requestsAsync.when(
+        data: (requests) {
           if (requests.isEmpty) {
-            return const Center(child: Text('Belum ada request jastip.'));
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.request_page_outlined, size: 64, color: Colors.grey),
+                  SizedBox(height: 16),
+                  Text(
+                    'Belum ada riwayat request',
+                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                  ),
+                  Text(
+                    'Request yang Anda buat akan muncul di sini',
+                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                  ),
+                ],
+              ),
+            );
           }
 
           return ListView.builder(
+            padding: const EdgeInsets.all(8),
             itemCount: requests.length,
             itemBuilder: (context, index) {
-              final post = requests[index];
-              return Card(
-                margin: const EdgeInsets.all(8),
-                child: ListTile(
-                  title: Text(post.title ?? 'Request Jastip'),
-                  subtitle: Text('Dibuat: ${post.createdAt.toDate().toString()}'),
-                  trailing: Icon(Icons.arrow_forward_ios, color: Colors.grey[600]),
-                  onTap: () {
-                    GoRouter.of(context).push('/post-detail/${post.id}');
-                  },
-                ),
-              );
+              final request = requests[index];
+              return PostWidget(post: request);
             },
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, stack) => Center(child: Text('Error: $err')),
+        error: (error, stack) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Error: $error'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.refresh(userRequestsProvider(currentUserId)),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

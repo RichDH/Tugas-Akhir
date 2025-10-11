@@ -1,42 +1,57 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CartItem extends Equatable {
+  final String id;
   final String postId;
   final String title;
   final double price;
   final String imageUrl;
   final String sellerId;
+  final String sellerUsername;
   final Timestamp addedAt;
-  final int quantity;
-  final String? notes;
   final Timestamp? deadline;
+  final int quantity;
 
   const CartItem({
+    required this.id,
     required this.postId,
     required this.title,
     required this.price,
     required this.imageUrl,
     required this.sellerId,
+    required this.sellerUsername,
     required this.addedAt,
-    this.quantity = 1,
-    this.notes,
     this.deadline,
+    this.quantity = 1,
   });
 
   factory CartItem.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+
     return CartItem(
-      postId: data['postId'] as String,
-      title: data['title'] as String,
-      price: (data['price'] as num).toDouble(),
-      imageUrl: data['imageUrl'] as String,
-      sellerId: data['sellerId'] as String,
-      addedAt: data['addedAt'] as Timestamp,
-      quantity: data['quantity'] as int? ?? 1,
-      notes: data['notes'] as String?,
+      id: doc.id,
+      postId: data['postId'] as String? ?? '',
+      title: data['title'] as String? ?? '',
+      price: _parseDouble(data['price']) ?? 0.0, // ✅ SAFE PARSING
+      imageUrl: data['imageUrl'] as String? ?? '',
+      sellerId: data['sellerId'] as String? ?? '',
+      sellerUsername: data['sellerUsername'] as String? ?? '',
+      addedAt: data['addedAt'] as Timestamp? ?? Timestamp.now(),
       deadline: data['deadline'] as Timestamp?,
+      quantity: data['quantity'] as int? ?? 1,
     );
+  }
+
+  // ✅ SAFE DOUBLE PARSING
+  static double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value);
+    }
+    return null;
   }
 
   Map<String, dynamic> toFirestore() {
@@ -46,13 +61,42 @@ class CartItem extends Equatable {
       'price': price,
       'imageUrl': imageUrl,
       'sellerId': sellerId,
+      'sellerUsername': sellerUsername,
       'addedAt': addedAt,
-      'quantity': quantity,
-      'notes': notes,
       'deadline': deadline,
+      'quantity': quantity,
     };
   }
 
+  CartItem copyWith({
+    String? id,
+    String? postId,
+    String? title,
+    double? price,
+    String? imageUrl,
+    String? sellerId,
+    String? sellerUsername,
+    Timestamp? addedAt,
+    Timestamp? deadline,
+    int? quantity,
+  }) {
+    return CartItem(
+      id: id ?? this.id,
+      postId: postId ?? this.postId,
+      title: title ?? this.title,
+      price: price ?? this.price,
+      imageUrl: imageUrl ?? this.imageUrl,
+      sellerId: sellerId ?? this.sellerId,
+      sellerUsername: sellerUsername ?? this.sellerUsername,
+      addedAt: addedAt ?? this.addedAt,
+      deadline: deadline ?? this.deadline,
+      quantity: quantity ?? this.quantity,
+    );
+  }
+
   @override
-  List<Object?> get props => [postId, title, price, imageUrl, sellerId, addedAt, quantity, notes, deadline];
+  List<Object?> get props => [
+    id, postId, title, price, imageUrl, sellerId,
+    sellerUsername, addedAt, deadline, quantity,
+  ];
 }

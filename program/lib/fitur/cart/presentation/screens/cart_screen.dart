@@ -27,7 +27,7 @@ class CartScreen extends ConsumerWidget {
               final item = items[index];
               return _CartItemTile(
                 item: item,
-                onRemove: () => ref.read(cartProvider.notifier).removeFromCart(item.postId),
+                onRemove: () => ref.read(cartProvider.notifier).removeFromCart(item.id),
               );
             },
           );

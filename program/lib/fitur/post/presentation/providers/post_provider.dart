@@ -1,113 +1,146 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:program/app/providers/firebase_providers.dart';
-import 'package:program/fitur/post/data/repositories/post_repository_impl.dart';
-import 'package:program/fitur/post/domain/repositories/post_repository.dart';
-import 'package:program/fitur/post/domain/entities/post.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../domain/entities/post.dart';
 
-// Provider untuk PostRepository
-final postRepositoryProvider = Provider<PostRepository>((ref) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return PostRepositoryImpl(firestore);
-});
-
-final postDetailStreamProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, postId) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return firestore.collection('posts').doc(postId).snapshots();
-});
-
-final userProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, userId) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return firestore.collection('users').doc(userId).snapshots();
-});
-
-final commentsStreamProvider =
-StreamProvider.autoDispose.family<QuerySnapshot, String>((ref, postId) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return firestore
+// ✅ PROVIDER UNTUK GET POST BY ID
+final postByIdProvider = StreamProvider.family<Post?, String>((ref, postId) {
+  return FirebaseFirestore.instance
       .collection('posts')
       .doc(postId)
-      .collection('comments')
-      .orderBy('timestamp', descending: true)
-      .snapshots();
+      .snapshots()
+      .map((doc) {
+    if (!doc.exists) return null;
+    return Post.fromFirestore(doc);
+  });
 });
 
-// State Notifier untuk aksi-aksi pada post
+// ✅ TAMBAHKAN DI post_provider.dart
+final userRequestsProvider = StreamProvider.family<List<Post>, String>((ref, userId) {
+  if (userId.isEmpty) return Stream.value([]);
+
+  return FirebaseFirestore.instance
+      .collection('posts')
+      .where('userId', isEqualTo: userId)
+      .where('type', isEqualTo: 'request')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snapshot) {
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      final likedBy = List<String>.from(data['likedBy'] ?? []);
+      final isLiked = likedBy.contains(userId);
+
+      data['isLiked'] = isLiked;
+      return Post.fromFirestore(doc);
+    }).toList();
+  });
+});
+
+
+// ✅ PROVIDER UNTUK GET SEMUA POSTS
+final postsProvider = StreamProvider<List<Post>>((ref) {
+  return FirebaseFirestore.instance
+      .collection('posts')
+      .orderBy('createdAt', descending: true)
+      .snapshots()
+      .map((snapshot) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      final likedBy = List<String>.from(data['likedBy'] ?? []);
+      final isLiked = likedBy.contains(currentUserId);
+
+      // Create post dengan isLiked yang benar
+      final post = Post.fromFirestore(doc);
+      return post.copyWith(isLiked: isLiked);
+    }).toList();
+  });
+})
+
+;
+
+// ✅ POST NOTIFIER UNTUK ACTIONS
+final postNotifierProvider = StateNotifierProvider<PostNotifier, AsyncValue<void>>((ref) {
+  return PostNotifier();
+});
+
 class PostNotifier extends StateNotifier<AsyncValue<void>> {
-  final Ref _ref;
-  PostNotifier(this._ref) : super(const AsyncData(null));
+  PostNotifier() : super(const AsyncValue.data(null));
 
-  // Fungsi untuk like/unlike post
   Future<void> toggleLike(String postId) async {
-    final firestore = _ref.read(firebaseFirestoreProvider);
-    final userId = _ref.read(firebaseAuthProvider).currentUser?.uid;
-    if (userId == null) return;
-
-    final postRef = firestore.collection('posts').doc(postId);
-
-    state = const AsyncLoading();
     try {
-      final doc = await postRef.get();
-      final likes = List<String>.from(doc.data()?['likes'] ?? []);
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (currentUserId.isEmpty) return;
 
-      if (likes.contains(userId)) {
-        // Jika sudah like, maka unlike
-        await postRef.update({
-          'likes': FieldValue.arrayRemove([userId])
-        });
-      } else {
-        // Jika belum like, maka like
-        await postRef.update({
-          'likes': FieldValue.arrayUnion([userId])
-        });
-      }
-      state = const AsyncData(null);
+      final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final postDoc = await transaction.get(postRef);
+        if (!postDoc.exists) return;
+
+        final data = postDoc.data()!;
+        final likedBy = List<String>.from(data['likedBy'] ?? []);
+        final likesCount = data['likesCount'] ?? 0;
+
+        if (likedBy.contains(currentUserId)) {
+          likedBy.remove(currentUserId);
+          transaction.update(postRef, {
+            'likedBy': likedBy,
+            'likesCount': likesCount - 1,
+          });
+        } else {
+          likedBy.add(currentUserId);
+          transaction.update(postRef, {
+            'likedBy': likedBy,
+            'likesCount': likesCount + 1,
+          });
+        }
+      });
     } catch (e) {
-      state = AsyncError(e, StackTrace.current);
+      // Handle error silently or show snackbar
+      print('Error toggling like: $e');
     }
   }
 
-  // Fungsi untuk menambah komentar
-  Future<void> addComment(String postId, String text) async {
-    final firestore = _ref.read(firebaseFirestoreProvider);
-    final user = _ref.read(firebaseAuthProvider).currentUser;
-    if (user == null || text.trim().isEmpty) return;
-
-    // Ambil username dari koleksi 'users'
-    final userDoc = await firestore.collection('users').doc(user.uid).get();
-    final username = userDoc.data()?['username'] ?? 'User';
-
-    final commentData = {
-      'text': text.trim(),
-      'userId': user.uid,
-      'username': username,
-      'timestamp': FieldValue.serverTimestamp(),
-    };
-
-    state = const AsyncLoading();
+  Future<void> takeOrder(String postId) async {
     try {
-      await firestore.collection('posts').doc(postId).collection('comments').add(commentData);
-      state = const AsyncData(null);
-    } catch(e) {
-      state = AsyncError(e, StackTrace.current);
+      final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+      if (currentUserId.isEmpty) return;
+
+      final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final postDoc = await transaction.get(postRef);
+        if (!postDoc.exists) return;
+
+        final data = postDoc.data()!;
+        final currentOffers = data['currentOffers'] ?? 0;
+        final maxOffers = data['maxOffers'] ?? 1;
+
+        if (currentOffers >= maxOffers) {
+          throw Exception('Post sudah penuh');
+        }
+
+        transaction.update(postRef, {
+          'currentOffers': currentOffers + 1,
+        });
+      });
+    } catch (e) {
+      print('Error taking order: $e');
+      rethrow;
     }
   }
 }
 
-// Provider untuk Notifier
-final postNotifierProvider =
-StateNotifierProvider<PostNotifier, AsyncValue<void>>((ref) {
-  return PostNotifier(ref);
+// ✅ CREATE POST PROVIDER
+final createPostProvider = StateNotifierProvider<CreatePostNotifier, AsyncValue<void>>((ref) {
+  return CreatePostNotifier();
 });
 
-// StateNotifier untuk mengelola state dan logika di halaman Create Post
 class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
-  final PostRepository _postRepository;
-  final FirebaseAuth _auth;
-  final FirebaseFirestore _firestore;
-
-  CreatePostNotifier(this._postRepository, this._auth, this._firestore) : super(const AsyncValue.data(null));
+  CreatePostNotifier() : super(const AsyncValue.data(null));
 
   Future<void> createPost({
     required PostType type,
@@ -116,7 +149,7 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     required String category,
     double? price,
     required String location,
-    required String locationCity,
+    String? locationCity,
     double? locationLat,
     double? locationLng,
     required Condition condition,
@@ -134,71 +167,51 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncValue.loading();
 
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception("Pengguna belum login.");
-      }
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) throw Exception('User not authenticated');
 
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final username = userDoc.data()?['username'] as String? ?? 'Pengguna Tidak Dikenal';
+      // TODO: Upload files dan dapatkan URLs
+      final imageUrls = <String>[]; // Placeholder - implement file upload
+      String? videoUrl; // Placeholder - implement file upload
 
-      List<String> imageUrls = [];
-      String? videoUrl;
+      final postData = {
+        'title': title,
+        'description': description,
+        'type': type.name,
+        'category': category,
+        'price': price,
+        'isPriceNegotiable': isPriceNegotiable,
+        'location': location,
+        'locationCity': locationCity ?? '',
+        'locationLat': locationLat,
+        'locationLng': locationLng,
+        'imageUrls': imageUrls,
+        'videoUrl': videoUrl,
+        'condition': condition.name,
+        'brand': brand ?? '',
+        'size': size ?? '',
+        'weight': weight != null ? double.tryParse(weight) : null,
+        'additionalNotes': additionalNotes ?? '',
+        'syarat': syarat ?? '',
+        'maxOffers': maxOffers,
+        'deadline': deadline,
+        'userId': currentUser.uid,
+        'username': currentUser.displayName ?? 'User',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'likesCount': 0,
+        'commentsCount': 0,
+        'currentOffers': 0,
+        'likedBy': [],
+      };
 
-      if (videoPath != null) {
-        videoUrl = await _postRepository.uploadPostVideo(videoPath, user.uid);
-      } else if (imagePaths.isNotEmpty) {
-        imageUrls = await _postRepository.uploadPostImages(imagePaths, user.uid);
-      }
-
-      final newPost = Post(
-        id: '',
-        userId: user.uid,
-        username: username,
-        type: type,
-        title: title,
-        description: description,
-        category: category,
-        price: price,
-        location: location,
-        locationCity: locationCity,
-        locationLat: locationLat,
-        locationLng: locationLng,
-        condition: condition,
-        brand: brand,
-        size: size,
-        weight: weight,
-        additionalNotes: additionalNotes,
-        imageUrls: imageUrls,
-        videoUrl: videoUrl,
-        createdAt: Timestamp.now(),
-        syarat: syarat,
-        maxOffers: maxOffers,
-        deadline: deadline,
-        isPriceNegotiable: isPriceNegotiable,
-      );
-
-      await _postRepository.createPost(newPost);
+      await FirebaseFirestore.instance
+          .collection('posts')
+          .add(postData);
 
       state = const AsyncValue.data(null);
     } catch (e, stack) {
-      print('Error creating post in Notifier: $e\n$stack');
       state = AsyncValue.error(e, stack);
     }
   }
 }
-
-// Provider untuk CreatePostNotifier
-final createPostProvider = StateNotifierProvider<CreatePostNotifier, AsyncValue<void>>((ref) {
-  final postRepository = ref.watch(postRepositoryProvider);
-  final auth = ref.watch(firebaseAuthProvider);
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return CreatePostNotifier(postRepository, auth, firestore);
-});
-
-final postListStreamProvider = StreamProvider<List<Post>>((ref) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
-  return firestore.collection('posts').orderBy('createdAt', descending: true).snapshots().map((snapshot) {
-    return snapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
-  });
-});

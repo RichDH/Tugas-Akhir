@@ -309,7 +309,7 @@ class ProfileScreen extends ConsumerWidget {
             return GestureDetector(
               onTap: () {
                 // Navigasi ke halaman detail dengan mengirim ID post
-                context.push('/post/${postDoc.id}');
+                context.push('/post-detail/${postDoc.id}');
               },
               child: Image.network(imageUrls[0],
                   fit: BoxFit.cover,
