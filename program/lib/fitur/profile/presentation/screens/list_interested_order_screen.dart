@@ -6,20 +6,119 @@ import 'package:go_router/go_router.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
 import 'package:intl/intl.dart';
-
-// ✅ HIDE TRANSACTION DARI CLOUD_FIRESTORE UNTUK MENGHINDARI KONFLIK
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
-
 import '../../../jualbeli/domain/entities/transaction_entity.dart';
+
+// ✅ BUAT AUTH-SAFE TRANSACTION PROVIDER BARU
+final safeTransactionsBySellerProvider = StreamProvider.family<List<Transaction>, String>((ref, sellerId) {
+  // ✅ GUARD 1: PASTIKAN AUTH STATE READY DULU
+  final authState = ref.watch(authStateChangesProvider);
+
+  return authState.when(
+    // Jika auth loading, return empty stream
+    loading: () => Stream.value([]),
+
+    // Jika auth error, return error stream
+    error: (error, _) => Stream.error(error),
+
+    // Hanya jika auth success dan user match
+    data: (user) {
+      if (user == null) {
+        return Stream.error('User not authenticated');
+      }
+
+      if (user.uid != sellerId) {
+        return Stream.error('User ID mismatch');
+      }
+
+      // ✅ SEKARANG AMAN UNTUK AKSES FIRESTORE
+      print('✅ Safe to access Firestore for seller: ${user.uid}');
+
+      // Buat direct firestore stream yang aman
+      final firestore = ref.watch(firebaseFirestoreProvider);
+
+      return firestore
+          .collection('transactions')
+          .where('sellerId', isEqualTo: sellerId)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) {
+        return snapshot.docs.map((doc) {
+          final data = doc.data();
+          return Transaction(
+            id: doc.id,
+            postId: data['postId'] ?? '',
+            buyerId: data['buyerId'] ?? '',
+            sellerId: data['sellerId'] ?? '',
+            amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+            status: TransactionStatus.values.firstWhere(
+                  (e) => e.name == data['status'],
+              orElse: () => TransactionStatus.pending,
+            ),
+            createdAt: data['createdAt'] ?? Timestamp.now(),
+            shippedAt: data['shippedAt'],
+            deliveredAt: data['deliveredAt'],
+            refundReason: data['refundReason'],
+            isEscrow: data['isEscrow'] ?? false,
+            escrowAmount: (data['escrowAmount'] as num?)?.toDouble() ?? 0.0,
+            releaseToSellerAt: data['releaseToSellerAt'],
+            isAcceptedBySeller: data['isAcceptedBySeller'] ?? false,
+            rejectionReason: data['rejectionReason'],
+          );
+        }).toList();
+      }).handleError((error) {
+        print('❌ Firestore stream error: $error');
+        throw error;
+      });
+    },
+  );
+});
 
 class ListInterestedOrderScreen extends ConsumerWidget {
   const ListInterestedOrderScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final currentUserId = ref.read(firebaseAuthProvider).currentUser?.uid ?? '';
-    final transactionsAsync = ref.watch(transactionsBySellerStreamProvider(currentUserId));
+    final authState = ref.watch(authStateChangesProvider);
 
+    return authState.when(
+      loading: () => Scaffold(
+        appBar: AppBar(title: const Text('List Pesanan')),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      error: (error, stack) => Scaffold(
+        appBar: AppBar(title: const Text('List Pesanan')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Auth Error: $error'),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(authStateChangesProvider),
+                child: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      data: (user) {
+        if (user == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('List Pesanan')),
+            body: const Center(
+              child: Text('Silakan login terlebih dahulu'),
+            ),
+          );
+        }
+
+        return _buildAuthenticatedContent(context, ref, user.uid);
+      },
+    );
+  }
+
+  Widget _buildAuthenticatedContent(BuildContext context, WidgetRef ref, String userId) {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -34,51 +133,171 @@ class ListInterestedOrderScreen extends ConsumerWidget {
         ),
         body: TabBarView(
           children: [
-            _buildListInterested(transactionsAsync, context, ref),
-            _buildListOrder(transactionsAsync, context, ref),
+            _buildListInterested(context, ref, userId),
+            _buildListOrder(context, ref, userId),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildListInterested(AsyncValue<List<Transaction>> transactionsAsync, BuildContext context, WidgetRef ref) {
+  Widget _buildListInterested(BuildContext context, WidgetRef ref, String userId) {
+    // ✅ GUNAKAN SAFE PROVIDER YANG BARU
+    final transactionsAsync = ref.watch(safeTransactionsBySellerProvider(userId));
+
     return transactionsAsync.when(
-         data: (transactions) {
-        final interestedTransactions = transactions.where((t) => t.status == TransactionStatus.pending).toList();
-        if (interestedTransactions.isEmpty) return const Center(child: Text('Belum ada pesanan yang masuk.'));
-        return ListView.builder(
-          itemCount: interestedTransactions.length,
-          itemBuilder: (context, index) {
-            final transaction = interestedTransactions[index];
-            return _TransactionCard(transaction: transaction, isInterested: true);
+      data: (transactions) {
+        final interestedTransactions = transactions
+            .where((t) => t.status == TransactionStatus.pending)
+            .toList();
+
+        if (interestedTransactions.isEmpty) {
+          return const Center(child: Text('Belum ada pesanan yang masuk.'));
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(safeTransactionsBySellerProvider);
           },
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: interestedTransactions.length,
+            itemBuilder: (context, index) {
+              final transaction = interestedTransactions[index];
+              return _TransactionCard(
+                transaction: transaction,
+                isInterested: true,
+              );
+            },
+          ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, stack) => Center(child: Text('Error: $err')),
+      loading: () => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Memuat pesanan...'),
+          ],
+        ),
+      ),
+      error: (err, stack) {
+        print('❌ Safe provider error: $err');
+
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Terjadi kesalahan:',
+                  style: TextStyle(fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  err.toString().contains('permission-denied')
+                      ? 'Sesi login bermasalah. Silakan logout dan login ulang.'
+                      : err.toString(),
+                  textAlign: TextAlign.center
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  ref.invalidate(authStateChangesProvider);
+                  ref.invalidate(safeTransactionsBySellerProvider);
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildListOrder(AsyncValue<List<Transaction>> transactionsAsync, BuildContext context, WidgetRef ref) {
+  Widget _buildListOrder(BuildContext context, WidgetRef ref, String userId) {
+    // ✅ GUNAKAN SAFE PROVIDER YANG SAMA
+    final transactionsAsync = ref.watch(safeTransactionsBySellerProvider(userId));
+
     return transactionsAsync.when(
       data: (transactions) {
-        final orderTransactions = transactions.where((t) => t.status == TransactionStatus.paid || t.status == TransactionStatus.shipped).toList();
-        if (orderTransactions.isEmpty) return const Center(child: Text('Belum ada pesanan yang diterima.'));
-        return ListView.builder(
-          itemCount: orderTransactions.length,
-          itemBuilder: (context, index) {
-            final transaction = orderTransactions[index];
-            return _TransactionCard(transaction: transaction, isInterested: false);
+        final orderTransactions = transactions
+            .where((t) =>
+        t.status == TransactionStatus.paid ||
+            t.status == TransactionStatus.shipped
+        )
+            .toList();
+
+        if (orderTransactions.isEmpty) {
+          return const Center(child: Text('Belum ada pesanan yang diterima.'));
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(safeTransactionsBySellerProvider);
           },
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: orderTransactions.length,
+            itemBuilder: (context, index) {
+              final transaction = orderTransactions[index];
+              return _TransactionCard(
+                transaction: transaction,
+                isInterested: false,
+              );
+            },
+          ),
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, stack) => Center(child: Text('Error: $err')),
+      loading: () => const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Memuat pesanan...'),
+          ],
+        ),
+      ),
+      error: (err, stack) {
+        print('❌ List order error: $err');
+
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('Terjadi kesalahan:',
+                  style: TextStyle(fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 8),
+              Text(
+                  err.toString().contains('permission-denied')
+                      ? 'Sesi login bermasalah. Silakan logout dan login ulang.'
+                      : err.toString(),
+                  textAlign: TextAlign.center
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () {
+                  ref.invalidate(authStateChangesProvider);
+                  ref.invalidate(safeTransactionsBySellerProvider);
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
+// ✅ _TransactionCard TETAP SAMA SEPERTI SEBELUMNYA
 class _TransactionCard extends ConsumerWidget {
   final Transaction transaction;
   final bool isInterested;
@@ -90,7 +309,7 @@ class _TransactionCard extends ConsumerWidget {
     final formattedPrice = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(transaction.amount);
     final buyerNameAsync = ref.watch(userNameProvider(transaction.buyerId));
 
-    return GestureDetector( // ✅ TAMBAHKAN GESTURE DETECTOR DI SINI
+    return GestureDetector(
       onTap: () {
         GoRouter.of(context).push('/transaction-detail/${transaction.id}');
       },
@@ -147,6 +366,7 @@ class _TransactionCard extends ConsumerWidget {
     );
   }
 
+  // ✅ METHODS TETAP SAMA SEPERTI SEBELUMNYA
   void _acceptTransaction(WidgetRef ref, String transactionId, BuildContext context) async {
     await ref.read(transactionProvider.notifier).acceptTransaction(transactionId);
 
@@ -189,7 +409,6 @@ class _TransactionCard extends ConsumerWidget {
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
             ElevatedButton(
               onPressed: () async {
-                // ✅ PROSES REJECTION DENGAN REFUND
                 await _processRejectionWithRefund(ref, transactionId, controller.text);
                 Navigator.pop(context);
                 _showSuccessDialog(context, 'Pesanan berhasil ditolak.\nDana telah dikembalikan ke pembeli.');
@@ -203,10 +422,8 @@ class _TransactionCard extends ConsumerWidget {
     );
   }
 
-// ✅ PROSES REJECTION DENGAN REFUND
   Future<void> _processRejectionWithRefund(WidgetRef ref, String transactionId, String reason) async {
     try {
-      // ✅ GET TRANSACTION DATA FIRST
       final transactionDoc = await FirebaseFirestore.instance
           .collection('transactions')
           .doc(transactionId)
@@ -217,7 +434,6 @@ class _TransactionCard extends ConsumerWidget {
         final buyerId = transactionData['buyerId'] as String;
         final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
 
-        // ✅ REFUND SALDO KE BUYER
         await FirebaseFirestore.instance
             .collection('users')
             .doc(buyerId)
@@ -225,7 +441,6 @@ class _TransactionCard extends ConsumerWidget {
           'saldo': FieldValue.increment(escrowAmount),
         });
 
-        // ✅ UPDATE TRANSACTION STATUS
         await ref.read(transactionProvider.notifier).rejectTransaction(transactionId, reason);
 
         print('✅ Refund processed: $escrowAmount to buyer $buyerId');
@@ -235,7 +450,6 @@ class _TransactionCard extends ConsumerWidget {
       throw e;
     }
   }
-
 
   void _markAsShipped(WidgetRef ref, String transactionId, BuildContext context) {
     ref.read(transactionProvider.notifier).markAsShipped(transactionId);
