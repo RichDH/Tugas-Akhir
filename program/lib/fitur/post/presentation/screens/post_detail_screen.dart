@@ -643,7 +643,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     );
   }
 
-  // ✅ BELI LANGSUNG DENGAN CEK SALDO
+  // ✅ PERBAIKAN BELI LANGSUNG - MASUK KE INTERESTED ORDERS DULU
   Future<void> _buyDirect(post, int quantity) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -660,26 +660,15 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
       if (userBalance < totalAmount) {
-        // ✅ SALDO TIDAK MENCUKUPI
         _showInsufficientBalanceDialog(totalAmount, userBalance);
         return;
       }
 
-      // ✅ SALDO MENCUKUPI, BUAT TRANSAKSI
-      await _createTransaction(post, quantity, totalAmount, user.uid);
-
-      // ✅ KURANGI SALDO USER
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-        'balance': FieldValue.increment(-totalAmount),
-      });
-
-      // ✅ TAMPILKAN POPUP SUKSES
-      _showTransactionSuccessDialog(totalAmount);
+      // ✅ KONFIRMASI TRANSAKSI DAN BUAT INTERESTED ORDER
+      await _showTransactionConfirmation(post, quantity, totalAmount, user.uid);
 
     } catch (e) {
+      print('❌ Error in _buyDirect: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Gagal membuat transaksi: $e'),
@@ -688,6 +677,196 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
     }
   }
+
+// ✅ DIALOG KONFIRMASI TRANSAKSI SEBELUM MEMBUAT INTERESTED ORDER
+  Future<void> _showTransactionConfirmation(post, int quantity, double totalAmount, String userId) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Konfirmasi Pembelian'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.info_outline, size: 48, color: Colors.blue),
+            const SizedBox(height: 16),
+            Text(
+              'Item: ${post.title}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text('Quantity: $quantity'),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: Column(
+                children: const [
+                  Icon(Icons.schedule, color: Colors.orange),
+                  SizedBox(height: 8),
+                  Text(
+                    'Pesanan akan masuk ke daftar "Interested Orders" penjual',
+                    style: TextStyle(fontSize: 12, color: Colors.orange),
+                    textAlign: TextAlign.center,
+                  ),
+                  Text(
+                    'Menunggu persetujuan penjual',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Lanjutkan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      await _createInterestedOrder(post, quantity, totalAmount, userId);
+    }
+  }
+
+// ✅ BUAT INTERESTED ORDER (BUKAN LANGSUNG PAID)
+  Future<void> _createInterestedOrder(post, int quantity, double totalAmount, String userId) async {
+    try {
+      // ✅ POTONG SALDO DULU (ESCROW)
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({
+        'saldo': FieldValue.increment(-totalAmount),
+      });
+
+      // ✅ BUAT TRANSAKSI DENGAN STATUS PENDING (INTERESTED)
+      await FirebaseFirestore.instance.collection('transactions').add({
+        'postId': post.id,
+        'buyerId': userId,
+        'sellerId': post.userId,
+        'amount': totalAmount,
+        'status': 'pending', // ✅ STATUS PENDING = INTERESTED
+        'createdAt': FieldValue.serverTimestamp(),
+        'items': [
+          {
+            'postId': post.id,
+            'title': post.title,
+            'price': post.price ?? 0,
+            'quantity': quantity,
+            'imageUrl': post.imageUrls.isNotEmpty ? post.imageUrls[0] : '',
+          }
+        ],
+        'isEscrow': true,
+        'escrowAmount': totalAmount,
+        'isAcceptedBySeller': false, // ✅ BELUM DITERIMA PENJUAL
+        'type': 'direct_buy',
+      });
+
+      // ✅ TAMPILKAN POPUP SUCCESS UNTUK INTERESTED ORDER
+      _showInterestedOrderSuccessDialog(totalAmount);
+
+    } catch (e) {
+      print('❌ Error creating interested order: $e');
+
+      // ✅ ROLLBACK SALDO JIKA GAGAL
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({
+        'saldo': FieldValue.increment(totalAmount),
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal membuat pesanan: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+// ✅ DIALOG SUCCESS UNTUK INTERESTED ORDER
+  void _showInterestedOrderSuccessDialog(double totalAmount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pesanan Berhasil Dibuat'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.schedule_send,
+              size: 64,
+              color: Colors.orange,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Pesanan telah dikirim ke penjual!',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: const [
+                  Text(
+                    '🔒 Saldo telah dipotong dan disimpan aman',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Dana akan dikembalikan jika pesanan ditolak',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/transaction-history');
+            },
+            child: const Text('Lihat Status'),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   void _showInsufficientBalanceDialog(double totalAmount, double userBalance) {
     showDialog(

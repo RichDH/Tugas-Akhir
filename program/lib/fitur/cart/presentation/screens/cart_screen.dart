@@ -439,7 +439,6 @@ class CartScreen extends ConsumerWidget {
         return;
       }
 
-      // ✅ CEK SALDO USER
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -482,7 +481,7 @@ class CartScreen extends ConsumerWidget {
     }
   }
 
-  // ✅ CREATE TRANSACTION DARI CART
+  // ✅ CREATE INTERESTED ORDERS DARI CART (BUKAN LANGSUNG PAID)
   Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId) async {
     // Group items by seller untuk membuat transaksi per penjual
     final Map<String, List> itemsBySeller = {};
@@ -494,7 +493,7 @@ class CartScreen extends ConsumerWidget {
       itemsBySeller[item.sellerId]!.add(item);
     }
 
-    // Buat transaksi untuk setiap penjual
+    // ✅ BUAT INTERESTED ORDER UNTUK SETIAP PENJUAL
     for (final sellerId in itemsBySeller.keys) {
       final sellerItems = itemsBySeller[sellerId]!;
       final sellerTotal = sellerItems.fold<double>(
@@ -506,7 +505,7 @@ class CartScreen extends ConsumerWidget {
         'buyerId': userId,
         'sellerId': sellerId,
         'amount': sellerTotal,
-        'status': 'paid',
+        'status': 'pending', // ✅ STATUS PENDING = INTERESTED
         'createdAt': FieldValue.serverTimestamp(),
         'items': sellerItems.map((item) => {
           'postId': item.postId,
@@ -517,10 +516,78 @@ class CartScreen extends ConsumerWidget {
         }).toList(),
         'isEscrow': true,
         'escrowAmount': sellerTotal,
+        'isAcceptedBySeller': false, // ✅ BELUM DITERIMA PENJUAL
         'type': 'cart_checkout',
       });
     }
   }
+
+// ✅ GANTI DIALOG SUCCESS UNTUK CART
+  void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pesanan Berhasil Dibuat'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.schedule_send,
+              size: 64,
+              color: Colors.orange,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Semua pesanan telah dikirim ke penjual!',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Keranjang telah dikosongkan',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: const [
+                  Text(
+                    '🔒 Saldo telah dipotong dan disimpan aman',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Menunggu persetujuan penjual',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/transaction-history');
+            },
+            child: const Text('Lihat Status Pesanan'),
+          ),
+        ],
+      ),
+    );
+  }
+
 
   // ✅ DIALOG SALDO TIDAK MENCUKUPI (SAMA SEPERTI POST DETAIL)
   void _showInsufficientBalanceDialog(BuildContext context, double totalAmount, double userBalance) {
@@ -571,48 +638,48 @@ class CartScreen extends ConsumerWidget {
   }
 
   // ✅ DIALOG CHECKOUT BERHASIL
-  void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Checkout Berhasil'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.check_circle,
-              size: 64,
-              color: Colors.green,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Semua item berhasil dibeli!',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Keranjang telah dikosongkan',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.push('/transaction-history');
-            },
-            child: const Text('Lihat Riwayat'),
-          ),
-        ],
-      ),
-    );
-  }
+  // void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: const Text('Checkout Berhasil'),
+  //       content: Column(
+  //         mainAxisSize: MainAxisSize.min,
+  //         children: [
+  //           const Icon(
+  //             Icons.check_circle,
+  //             size: 64,
+  //             color: Colors.green,
+  //           ),
+  //           const SizedBox(height: 16),
+  //           const Text(
+  //             'Semua item berhasil dibeli!',
+  //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  //           ),
+  //           const SizedBox(height: 8),
+  //           Text(
+  //             'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+  //             style: const TextStyle(fontSize: 16),
+  //           ),
+  //           const SizedBox(height: 8),
+  //           const Text(
+  //             'Keranjang telah dikosongkan',
+  //             style: TextStyle(fontSize: 14, color: Colors.grey),
+  //           ),
+  //         ],
+  //       ),
+  //       actions: [
+  //         ElevatedButton(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             context.push('/transaction-history');
+  //           },
+  //           child: const Text('Lihat Riwayat'),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   void _showDeleteConfirmation(
       BuildContext context,

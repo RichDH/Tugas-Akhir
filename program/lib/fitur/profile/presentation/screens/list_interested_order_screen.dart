@@ -167,23 +167,75 @@ class _TransactionCard extends ConsumerWidget {
       builder: (context) {
         final controller = TextEditingController();
         return AlertDialog(
-          title: const Text('Alasan Penolakan'),
-          content: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Alasan...')),
+          title: const Text('Tolak Pesanan'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.warning, size: 48, color: Colors.orange),
+              const SizedBox(height: 8),
+              const Text('Dana akan dikembalikan ke pembeli'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  hintText: 'Alasan penolakan...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
-            TextButton(
-              onPressed: () {
-                ref.read(transactionProvider.notifier).rejectTransaction(transactionId, controller.text);
+            ElevatedButton(
+              onPressed: () async {
+                // ✅ PROSES REJECTION DENGAN REFUND
+                await _processRejectionWithRefund(ref, transactionId, controller.text);
                 Navigator.pop(context);
-                _showSuccessDialog(context, 'Pesanan berhasil ditolak.');
+                _showSuccessDialog(context, 'Pesanan berhasil ditolak.\nDana telah dikembalikan ke pembeli.');
               },
-              child: const Text('Tolak'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Tolak & Kembalikan Dana', style: TextStyle(color: Colors.white)),
             ),
           ],
         );
       },
     );
   }
+
+// ✅ PROSES REJECTION DENGAN REFUND
+  Future<void> _processRejectionWithRefund(WidgetRef ref, String transactionId, String reason) async {
+    try {
+      // ✅ GET TRANSACTION DATA FIRST
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(transactionId)
+          .get();
+
+      if (transactionDoc.exists) {
+        final transactionData = transactionDoc.data()!;
+        final buyerId = transactionData['buyerId'] as String;
+        final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
+
+        // ✅ REFUND SALDO KE BUYER
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(buyerId)
+            .update({
+          'saldo': FieldValue.increment(escrowAmount),
+        });
+
+        // ✅ UPDATE TRANSACTION STATUS
+        await ref.read(transactionProvider.notifier).rejectTransaction(transactionId, reason);
+
+        print('✅ Refund processed: $escrowAmount to buyer $buyerId');
+      }
+    } catch (e) {
+      print('❌ Error processing refund: $e');
+      throw e;
+    }
+  }
+
 
   void _markAsShipped(WidgetRef ref, String transactionId, BuildContext context) {
     ref.read(transactionProvider.notifier).markAsShipped(transactionId);
