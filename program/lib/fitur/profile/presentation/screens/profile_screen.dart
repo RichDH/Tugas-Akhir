@@ -393,90 +393,126 @@ class ProfileScreen extends ConsumerWidget {
     required bool isMyProfile,
     required String targetUserId,
   }) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            const CircleAvatar(
-              radius: 40,
-              backgroundColor: Colors.grey,
-              child: Icon(Icons.person, size: 40, color: Colors.white),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStatColumn("Postingan", postsCount.toString()),
-                  _buildStatColumn("Pengikut", followersCount.toString()),
-                  _buildStatColumn("Mengikuti", followingCount.toString()),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(username, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(email, style: const TextStyle(color: Colors.grey)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
+    return Consumer(
+      builder: (context, ref, child) {
+        final userProfileAsync = ref.watch(userProfileStreamProvider(targetUserId));
 
-        if (isMyProfile)
-          ElevatedButton(
-            onPressed: () {},
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 36),
-            ),
-            child: const Text('Edit Profil'),
-          )
-        else
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {},
-                  child: const Text('Follow'),
+        return userProfileAsync.when(
+          data: (doc) {
+            final userData = doc.data() as Map<String, dynamic>? ?? {};
+            final bio = userData['bio'] as String? ?? '';
+            final profileImageUrl = userData['profileImageUrl'] as String? ?? '';
+            final name = userData['name'] as String? ?? username;
+
+            return Column(
+              children: [
+                Row(
+                  children: [
+                    // BARU: Profile image dengan network image
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.grey.shade200,
+                      backgroundImage: profileImageUrl.isNotEmpty
+                          ? NetworkImage(profileImageUrl)
+                          : null,
+                      child: profileImageUrl.isEmpty
+                          ? const Icon(Icons.person, size: 40, color: Colors.grey)
+                          : null,
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildStatColumn("Postingan", postsCount.toString()),
+                          _buildStatColumn("Pengikut", followersCount.toString()),
+                          _buildStatColumn("Mengikuti", followingCount.toString()),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Consumer(
-                  builder: (context, ref, child) {
-                    return OutlinedButton(
-                      onPressed: () async {
-                        try {
-                          final chatRoomId = await ref
-                              .read(chatNotifierProvider.notifier)
-                              .createOrGetChatRoom(targetUserId);
-
-                          context.push('/chat/$targetUserId', extra: {
-                            'username': username,
-                            'chatRoomId': chatRoomId,
-                          });
-
-                        } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Gagal memulai chat: ${e.toString()}"))
-                          );
-                        }
-                      },
-                      child: const Text('Message'),
-                    );
-                  },
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text('@$username', style: const TextStyle(color: Colors.grey)),
+                      // BARU: Tampilkan bio jika ada
+                      if (bio.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          bio,
+                          style: const TextStyle(fontSize: 14),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-      ],
+                const SizedBox(height: 10),
+
+                if (isMyProfile)
+                  ElevatedButton(
+                    onPressed: () {
+                      context.push('/edit-profile'); // Navigasi ke edit profile
+                    },
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 36),
+                    ),
+                    child: const Text('Edit Profil'),
+                  )
+                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {},
+                          child: const Text('Follow'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Consumer(
+                          builder: (context, ref, child) {
+                            return OutlinedButton(
+                              onPressed: () async {
+                                try {
+                                  final chatRoomId = await ref
+                                      .read(chatNotifierProvider.notifier)
+                                      .createOrGetChatRoom(targetUserId);
+
+                                  context.push('/chat/$targetUserId', extra: {
+                                    'username': username,
+                                    'chatRoomId': chatRoomId,
+                                  });
+
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text("Gagal memulai chat: ${e.toString()}"))
+                                  );
+                                }
+                              },
+                              child: const Text('Message'),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            );
+          },
+          loading: () => const CircularProgressIndicator(),
+          error: (e, s) => Text('Error loading profile: $e'),
+        );
+      },
     );
   }
+
 
   Widget _buildStatColumn(String label, String count) {
     return Column(

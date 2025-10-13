@@ -60,32 +60,56 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   // Metode untuk Register
+  // Tambahkan method untuk cek username di AuthNotifier class:
+
+  Future<bool> isUsernameAvailable(String username) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .get();
+
+      return querySnapshot.docs.isEmpty;
+    } catch (e) {
+      throw Exception('Gagal memeriksa ketersediaan username');
+    }
+  }
+
+// Update method register:
   Future<void> register(String email, String password, String username) async {
-    state = state.copyWith(isLoading: true, error: null); // Set state loading
+    state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Cek apakah username sudah digunakan
+      final isUsernameAvailable = await this.isUsernameAvailable(username);
+      if (!isUsernameAvailable) {
+        state = state.copyWith(
+            isLoading: false,
+            error: 'Username sudah digunakan, pilih username lain'
+        );
+        return;
+      }
+
       UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // --- SIMPAN DATA USER KE FIRESTORE ---
       if (userCredential.user != null) {
         await _firestore.collection('users').doc(userCredential.user!.uid).set({
           'uid': userCredential.user!.uid,
           'email': email,
-          'username': username, // Simpan username awal
+          'username': username,
+          'name': '', // Tambahkan field name kosong
+          'alamat': '', // Tambahkan field alamat kosong
           'createdAt': Timestamp.now(),
-          'isVerified': false, // Tambahkan field verifikasi
+          'isVerified': false,
           'saldo': 0,
-          // Tambahkan field profil lain yang relevan
         });
         await FCMService().init();
       }
-      // ------------------------------------
 
-      state = state.copyWith(isLoading: false); // Register berhasil, matikan loading
-      // authStateChangesProvider akan otomatis mengupdate & GoRouter redirect
+      state = state.copyWith(isLoading: false);
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'Terjadi kesalahan saat pendaftaran.';
       if (e.code == 'weak-password') {
@@ -95,14 +119,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       } else if (e.code == 'invalid-email') {
         errorMessage = 'Format email tidak valid.';
       }
-      // Tambahkan penanganan error lain jika perlu
 
-      state = state.copyWith(isLoading: false, error: errorMessage); // Set state error
+      state = state.copyWith(isLoading: false, error: errorMessage);
     } catch (e) {
       print(e.toString());
-      state = state.copyWith(isLoading: false, error: e.toString()); // Set state error
+      state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
+
 
 
 

@@ -38,6 +38,7 @@ import '../fitur/jualbeli/presentation/screens/request_history_screen.dart';
 import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_detail_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_history_screen.dart';
+import '../fitur/profile/presentation/screens/edit_profile_screen.dart';
 import '../fitur/profile/presentation/screens/history_screen.dart';
 import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
 import '../fitur/profile/presentation/screens/return_response_list_screen.dart';
@@ -152,6 +153,13 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/history', builder: (context, state) => const HistoryScreen()),
       GoRoute(path: '/transaction-history', builder: (context, state) => const TransactionHistoryScreen()),
       GoRoute(path: '/request-history', builder: (context, state) => const RequestHistoryScreen()),
+
+      GoRoute(
+        path: '/edit-profile',
+        builder: (context, state) => const EditProfileScreen(),
+      ),
+
+
 
       // --- ShellRoute untuk Bottom Navigation Bar ---
       StatefulShellRoute.indexedStack(
