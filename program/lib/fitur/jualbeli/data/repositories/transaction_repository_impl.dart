@@ -111,18 +111,34 @@ class TransactionRepositoryImpl implements TransactionRepository {
     }
   }
 
+  // File: transaction_repository_impl.dart - TAMBAHAN METHOD
   @override
   Future<void> completeTransaction(String transactionId, int rating) async {
     try {
+      // Get transaction data first
+      final transactionDoc = await _firestore.collection('transactions').doc(transactionId).get();
+      final transactionData = transactionDoc.data() as Map<String, dynamic>;
+      final sellerId = transactionData['sellerId'] as String;
+      final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
+
+      // Update transaction to completed
       await _firestore.collection('transactions').doc(transactionId).update({
-        'status': 'delivered', // Atau 'completed' — sesuaikan dengan enum Anda
+        'status': 'completed',
         'completedAt': FieldValue.serverTimestamp(),
         'rating': rating,
+        'releaseToSellerAt': FieldValue.serverTimestamp(),
       });
+
+      // Release funds to seller - ADD TO SELLER'S BALANCE
+      await _firestore.collection('users').doc(sellerId).update({
+        'saldo': FieldValue.increment(escrowAmount),
+      });
+
     } catch (e) {
-      throw Exception('Gagal menyelesaikan transaksi: $e');
+      throw Exception('Gagal menyelesaikan transaksi dan mencairkan dana: $e');
     }
   }
+
 
   @override
   Future<void> confirmReturnReceived(String transactionId) async {

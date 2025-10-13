@@ -18,7 +18,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
 
   TransactionNotifier(this._repository, this._ref) : super(const AsyncData(null));
 
-  // --- Transaksi Dasar ---
+  // File: transaction_provider.dart - METODE YANG DIPERBAIKI
   Future<void> createTransaction({
     required String postId,
     required String buyerId,
@@ -26,6 +26,7 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
     required double amount,
     required bool isEscrow,
     required double escrowAmount,
+    String? buyerAddress, // ✅ TAMBAHAN: Parameter alamat
   }) async {
     state = const AsyncLoading();
     try {
@@ -37,14 +38,10 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
         amount: amount,
         status: TransactionStatus.pending,
         createdAt: firestore.Timestamp.now(),
-        shippedAt: null,
-        deliveredAt: null,
-        refundReason: null,
         isEscrow: isEscrow,
         escrowAmount: escrowAmount,
-        releaseToSellerAt: null,
         isAcceptedBySeller: false,
-        rejectionReason: null,
+        buyerAddress: buyerAddress, // ✅ TAMBAHAN
       );
 
       await _repository.createTransaction(transaction);
@@ -53,6 +50,18 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, StackTrace.current);
     }
   }
+
+// ✅ TAMBAHAN: Method untuk menyelesaikan transaksi dan mencairkan dana
+  Future<void> completeTransactionAndReleaseFunds(String transactionId, int rating) async {
+    state = const AsyncLoading();
+    try {
+      await _repository.completeTransaction(transactionId, rating);
+      state = const AsyncData(null);
+    } catch (e) {
+      state = AsyncError(e, StackTrace.current);
+    }
+  }
+
 
   // --- Method untuk mendapatkan ID transaksi ---
   Future<String?> createTransactionAndGetId({

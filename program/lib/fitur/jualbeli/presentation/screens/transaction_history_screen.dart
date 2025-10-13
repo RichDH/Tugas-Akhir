@@ -1,5 +1,4 @@
-// File: lib/fitur/profile/presentation/screens/transaction_history_screen.dart
-
+// File: transaction_history_screen.dart - PERBAIKAN LENGKAP
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../../../jualbeli/domain/entities/transaction_entity.dart';
 
-// ✅ AUTH-SAFE TRANSACTION PROVIDER UNTUK BUYER (SAMA SEPERTI SEBELUMNYA)
+// ✅ SAFE TRANSACTION PROVIDER DENGAN STATUS COMPLETED
 final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>, String>((ref, buyerId) {
   final authState = ref.watch(authStateChangesProvider);
 
@@ -24,8 +23,6 @@ final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>,
       if (user.uid != buyerId) {
         return Stream.error('User ID mismatch');
       }
-
-      print('✅ Safe to access Firestore for buyer: ${user.uid}');
 
       final firestore = ref.watch(firebaseFirestoreProvider);
 
@@ -50,17 +47,17 @@ final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>,
             createdAt: data['createdAt'] ?? Timestamp.now(),
             shippedAt: data['shippedAt'],
             deliveredAt: data['deliveredAt'],
+            completedAt: data['completedAt'], // ✅ TAMBAHAN
             refundReason: data['refundReason'],
             isEscrow: data['isEscrow'] ?? false,
             escrowAmount: (data['escrowAmount'] as num?)?.toDouble() ?? 0.0,
             releaseToSellerAt: data['releaseToSellerAt'],
             isAcceptedBySeller: data['isAcceptedBySeller'] ?? false,
             rejectionReason: data['rejectionReason'],
+            rating: data['rating'] as int?,
+            buyerAddress: data['buyerAddress'] as String?, // ✅ TAMBAHAN
           );
         }).toList();
-      }).handleError((error) {
-        print('❌ Buyer transactions stream error: $error');
-        throw error;
       });
     },
   );
@@ -112,7 +109,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
 
   Widget _buildAuthenticatedContent(BuildContext context, WidgetRef ref, String userId) {
     return DefaultTabController(
-      length: 5, // ✅ UBAH DARI 4 JADI 5 TAB
+      length: 6, // ✅ UBAH DARI 5 JADI 6 TAB UNTUK COMPLETED
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Riwayat Transaksi'),
@@ -122,8 +119,9 @@ class TransactionHistoryScreen extends ConsumerWidget {
               Tab(text: 'Semua'),
               Tab(text: 'Diproses'),
               Tab(text: 'Dikirim'),
-              Tab(text: 'Selesai'), // ✅ KHUSUS DELIVERED
-              Tab(text: 'Dibatalkan'), // ✅ KHUSUS CANCELLED
+              Tab(text: 'Diterima'),
+              Tab(text: 'Selesai'), // ✅ TAMBAHAN: COMPLETED
+              Tab(text: 'Dibatalkan'),
             ],
           ),
         ),
@@ -132,8 +130,9 @@ class TransactionHistoryScreen extends ConsumerWidget {
             _buildAllTransactions(context, ref, userId),
             _buildProcessingTransactions(context, ref, userId),
             _buildShippedTransactions(context, ref, userId),
-            _buildCompletedTransactions(context, ref, userId), // ✅ KHUSUS DELIVERED
-            _buildCancelledTransactions(context, ref, userId), // ✅ KHUSUS CANCELLED
+            _buildDeliveredTransactions(context, ref, userId), // ✅ DELIVERED
+            _buildCompletedTransactions(context, ref, userId), // ✅ COMPLETED
+            _buildCancelledTransactions(context, ref, userId),
           ],
         ),
       ),
@@ -146,7 +145,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
 
     return _buildTransactionList(
       transactionsAsync: transactionsAsync,
-      filter: (transactions) => transactions, // Semua transaksi
+      filter: (transactions) => transactions,
       emptyMessage: 'Belum ada riwayat transaksi.',
       ref: ref,
     );
@@ -181,8 +180,8 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB SELESAI (DELIVERED SAJA)
-  Widget _buildCompletedTransactions(BuildContext context, WidgetRef ref, String userId) {
+  // ✅ TAB DITERIMA (DELIVERED SAJA)
+  Widget _buildDeliveredTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
     return _buildTransactionList(
@@ -190,12 +189,26 @@ class TransactionHistoryScreen extends ConsumerWidget {
       filter: (transactions) => transactions.where((t) =>
       t.status == TransactionStatus.delivered
       ).toList(),
+      emptyMessage: 'Tidak ada transaksi yang diterima.',
+      ref: ref,
+    );
+  }
+
+  // ✅ TAB SELESAI (COMPLETED SAJA) - BARU
+  Widget _buildCompletedTransactions(BuildContext context, WidgetRef ref, String userId) {
+    final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
+
+    return _buildTransactionList(
+      transactionsAsync: transactionsAsync,
+      filter: (transactions) => transactions.where((t) =>
+      t.status == TransactionStatus.completed // ✅ FILTER COMPLETED
+      ).toList(),
       emptyMessage: 'Tidak ada transaksi yang selesai.',
       ref: ref,
     );
   }
 
-  // ✅ TAB DIBATALKAN (CANCELLED SAJA)
+  // ✅ TAB DIBATALKAN (REFUNDED SAJA)
   Widget _buildCancelledTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
@@ -209,7 +222,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ HELPER METHOD UNTUK BUILD TRANSACTION LIST (SAMA SEPERTI SEBELUMNYA)
+  // ✅ HELPER METHOD UNTUK BUILD TRANSACTION LIST
   Widget _buildTransactionList({
     required AsyncValue<List<Transaction>> transactionsAsync,
     required List<Transaction> Function(List<Transaction>) filter,
@@ -269,13 +282,11 @@ class TransactionHistoryScreen extends ConsumerWidget {
         ),
       ),
       error: (err, stack) {
-        print('❌ Transaction history error: $err');
-
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
               const SizedBox(height: 16),
               const Text('Terjadi kesalahan:',
                   style: TextStyle(fontWeight: FontWeight.bold)
@@ -304,7 +315,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
   }
 }
 
-// ✅ CARD UNTUK MENAMPILKAN TRANSACTION HISTORY (SAMA SEPERTI SEBELUMNYA)
+// ✅ CARD UNTUK MENAMPILKAN TRANSACTION HISTORY DENGAN STATUS COMPLETED
 class _TransactionHistoryCard extends ConsumerWidget {
   final Transaction transaction;
 
@@ -320,7 +331,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
 
     final sellerNameAsync = ref.watch(userNameProvider(transaction.sellerId));
 
-    // ✅ STATUS COLOR MAPPING
+    // ✅ STATUS COLOR MAPPING DENGAN COMPLETED
     Color getStatusColor(TransactionStatus status) {
       switch (status) {
         case TransactionStatus.pending:
@@ -331,6 +342,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
           return Colors.purple;
         case TransactionStatus.delivered:
           return Colors.green;
+        case TransactionStatus.completed: // ✅ TAMBAHAN
+          return Colors.teal;
         case TransactionStatus.refunded:
           return Colors.red;
         default:
@@ -338,7 +351,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS TEXT MAPPING
+    // ✅ STATUS TEXT MAPPING DENGAN COMPLETED
     String getStatusText(TransactionStatus status) {
       switch (status) {
         case TransactionStatus.pending:
@@ -348,6 +361,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
         case TransactionStatus.shipped:
           return 'Sedang Dikirim';
         case TransactionStatus.delivered:
+          return 'Diterima';
+        case TransactionStatus.completed: // ✅ TAMBAHAN
           return 'Selesai';
         case TransactionStatus.refunded:
           return 'Dibatalkan';
@@ -356,7 +371,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS ICON MAPPING
+    // ✅ STATUS ICON MAPPING DENGAN COMPLETED
     IconData getStatusIcon(TransactionStatus status) {
       switch (status) {
         case TransactionStatus.pending:
@@ -367,6 +382,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
           return Icons.local_shipping;
         case TransactionStatus.delivered:
           return Icons.check_circle;
+        case TransactionStatus.completed: // ✅ TAMBAHAN
+          return Icons.star;
         case TransactionStatus.refunded:
           return Icons.cancel;
         default:
@@ -447,7 +464,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                 error: (err, stack) => Row(
                   children: [
                     const Icon(Icons.store, size: 16, color: Colors.grey),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text('Jastiper: ${transaction.sellerId.substring(0, 8)}...'),
                   ],
                 ),
@@ -485,6 +502,51 @@ class _TransactionHistoryCard extends ConsumerWidget {
                 ],
               ),
 
+              // ✅ SHOW BUYER ADDRESS IF EXISTS
+              if (transaction.buyerAddress != null && transaction.buyerAddress!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Alamat: ${transaction.buyerAddress}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // ✅ SHOW RATING IF COMPLETED
+              if (transaction.status == TransactionStatus.completed && transaction.rating != null) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.teal.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.teal.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.star, size: 16, color: Colors.teal),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Rating: ${transaction.rating}/5',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.teal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // ✅ SHOW CANCELLATION REASON IF CANCELLED
               if (transaction.status == TransactionStatus.refunded &&
                   transaction.rejectionReason != null) ...[
@@ -515,7 +577,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                 ),
               ],
 
-              // ✅ ACTION BUTTONS (JIKA DIPERLUKAN)
+              // ✅ ACTION BUTTONS BERDASARKAN STATUS
               if (transaction.status == TransactionStatus.shipped) ...[
                 const SizedBox(height: 12),
                 SizedBox(
@@ -528,6 +590,23 @@ class _TransactionHistoryCard extends ConsumerWidget {
                     ),
                     icon: const Icon(Icons.check_circle_outline, size: 18),
                     label: const Text('Konfirmasi Diterima'),
+                  ),
+                ),
+              ],
+
+              // ✅ COMPLETE TRANSACTION BUTTON UNTUK DELIVERED
+              if (transaction.status == TransactionStatus.delivered) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showCompleteTransactionDialog(ref, transaction.id, context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.star_outline, size: 18),
+                    label: const Text('Selesaikan Transaksi'),
                   ),
                 ),
               ],
@@ -553,17 +632,79 @@ class _TransactionHistoryCard extends ConsumerWidget {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
-
-              // Mark as delivered
               await ref.read(transactionProvider.notifier).markAsDelivered(transactionId);
-
-              // Show success dialog
-              _showSuccessDialog(context, 'Transaksi berhasil diselesaikan!');
+              _showSuccessDialog(context, 'Transaksi berhasil dikonfirmasi diterima!');
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             child: const Text('Ya, Sudah Diterima', style: TextStyle(color: Colors.white)),
           ),
         ],
+      ),
+    );
+  }
+
+  // ✅ COMPLETE TRANSACTION DIALOG DENGAN RATING
+  void _showCompleteTransactionDialog(WidgetRef ref, String transactionId, BuildContext context) {
+    int selectedRating = 5;
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Selesaikan Transaksi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Berikan rating untuk jastiper:'),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) {
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => selectedRating = index + 1);
+                    },
+                    child: Icon(
+                      index < selectedRating ? Icons.star : Icons.star_border,
+                      size: 36,
+                      color: Colors.amber,
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 8),
+              Text('Rating: $selectedRating/5'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  '💰 Dana akan dicairkan ke jastiper setelah transaksi selesai',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await ref.read(transactionProvider.notifier).completeTransactionAndReleaseFunds(transactionId, selectedRating);
+                _showSuccessDialog(context, 'Transaksi berhasil diselesaikan! Dana telah dicairkan ke jastiper.');
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              child: const Text('Selesaikan', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       ),
     );
   }

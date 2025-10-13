@@ -1,8 +1,8 @@
-// File: transaction_entity.dart
+// File: transaction_entity.dart - DIPERBAIKI
 import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum TransactionStatus { pending, paid, shipped, delivered, refunded }
+enum TransactionStatus { pending, paid, shipped, delivered, completed, refunded }
 
 class Transaction extends Equatable {
   final String id;
@@ -22,6 +22,7 @@ class Transaction extends Equatable {
   final bool isAcceptedBySeller;
   final String? rejectionReason;
   final int? rating;
+  final String? buyerAddress; // ✅ TAMBAHAN: Alamat pembeli
 
   const Transaction({
     required this.id,
@@ -38,9 +39,10 @@ class Transaction extends Equatable {
     required this.isEscrow,
     required this.escrowAmount,
     this.releaseToSellerAt,
-    this.isAcceptedBySeller = false, // Default: belum diterima
+    this.isAcceptedBySeller = false,
     this.rejectionReason,
     this.rating,
+    this.buyerAddress, // ✅ TAMBAHAN
   });
 
   factory Transaction.fromFirestore(DocumentSnapshot doc) {
@@ -63,6 +65,7 @@ class Transaction extends Equatable {
       isAcceptedBySeller: data['isAcceptedBySeller'] as bool? ?? false,
       rejectionReason: data['rejectionReason'] as String?,
       rating: data['rating'] as int?,
+      buyerAddress: data['buyerAddress'] as String?, // ✅ TAMBAHAN
     );
   }
 
@@ -71,6 +74,7 @@ class Transaction extends Equatable {
       case 'paid': return TransactionStatus.paid;
       case 'shipped': return TransactionStatus.shipped;
       case 'delivered': return TransactionStatus.delivered;
+      case 'completed': return TransactionStatus.completed; // ✅ TAMBAHAN
       case 'refunded': return TransactionStatus.refunded;
       default: return TransactionStatus.pending;
     }
@@ -94,12 +98,13 @@ class Transaction extends Equatable {
       'isAcceptedBySeller': isAcceptedBySeller,
       'rejectionReason': rejectionReason,
       'rating': rating,
+      'buyerAddress': buyerAddress, // ✅ TAMBAHAN
     };
   }
 
   @override
   List<Object?> get props => [
     id, postId, buyerId, sellerId, amount, status, createdAt, shippedAt, deliveredAt, completedAt,
-    refundReason, isEscrow, escrowAmount, releaseToSellerAt, isAcceptedBySeller, rejectionReason,rating
+    refundReason, isEscrow, escrowAmount, releaseToSellerAt, isAcceptedBySeller, rejectionReason, rating, buyerAddress
   ];
 }

@@ -460,7 +460,7 @@ class CartScreen extends ConsumerWidget {
           .collection('users')
           .doc(user.uid)
           .update({
-        'balance': FieldValue.increment(-totalAmount),
+        'saldo': FieldValue.increment(-totalAmount),
       });
 
       // ✅ HAPUS SEMUA ITEM DARI CART
@@ -481,7 +481,6 @@ class CartScreen extends ConsumerWidget {
     }
   }
 
-  // ✅ CREATE INTERESTED ORDERS DARI CART (BUKAN LANGSUNG PAID)
   Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId) async {
     // Group items by seller untuk membuat transaksi per penjual
     final Map<String, List> itemsBySeller = {};
@@ -493,7 +492,15 @@ class CartScreen extends ConsumerWidget {
       itemsBySeller[item.sellerId]!.add(item);
     }
 
-    // ✅ BUAT INTERESTED ORDER UNTUK SETIAP PENJUAL
+    // ✅ GET USER ADDRESS
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .get();
+
+    final userAddress = userDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
+
+    // ✅ BUAT TRANSAKSI UNTUK SETIAP PENJUAL DENGAN ALAMAT
     for (final sellerId in itemsBySeller.keys) {
       final sellerItems = itemsBySeller[sellerId]!;
       final sellerTotal = sellerItems.fold<double>(
@@ -505,8 +512,9 @@ class CartScreen extends ConsumerWidget {
         'buyerId': userId,
         'sellerId': sellerId,
         'amount': sellerTotal,
-        'status': 'pending', // ✅ STATUS PENDING = INTERESTED
+        'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
+        'buyerAddress': userAddress, // ✅ TAMBAHAN: Alamat pembeli
         'items': sellerItems.map((item) => {
           'postId': item.postId,
           'title': item.title,
@@ -516,7 +524,7 @@ class CartScreen extends ConsumerWidget {
         }).toList(),
         'isEscrow': true,
         'escrowAmount': sellerTotal,
-        'isAcceptedBySeller': false, // ✅ BELUM DITERIMA PENJUAL
+        'isAcceptedBySeller': false,
         'type': 'cart_checkout',
       });
     }

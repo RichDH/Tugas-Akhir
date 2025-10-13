@@ -1,3 +1,4 @@
+// File: transaction_detail_screen.dart - PERBAIKAN STATUS COMPLETED
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -93,6 +94,9 @@ class _TransactionDetailScreenState extends ConsumerState<TransactionDetailScree
             _buildInfoCard('Informasi Peserta', [
               _buildInfoRow('Pembeli', buyerUsername),
               _buildInfoRow('Penjual/Jastiper', sellerUsername),
+              // ✅ TAMBAHAN: ALAMAT PEMBELI
+              if (transaction['buyerAddress'] != null && (transaction['buyerAddress'] as String).isNotEmpty)
+                _buildInfoRow('Alamat Pengiriman', transaction['buyerAddress'] as String),
             ]),
 
             const SizedBox(height: 16),
@@ -101,8 +105,11 @@ class _TransactionDetailScreenState extends ConsumerState<TransactionDetailScree
             _buildInfoCard('Informasi Keuangan', [
               _buildInfoRow('Total Pembayaran', _formatCurrency(transaction['amount'])),
               _buildInfoRow('Status Escrow', transaction['isEscrow'] == true ? 'Aktif' : 'Tidak Aktif'),
-              if (transaction['shippingCost'] != null)
-                _buildInfoRow('Biaya Pengiriman', _formatCurrency(transaction['shippingCost'])),
+              if (transaction['escrowAmount'] != null)
+                _buildInfoRow('Dana Escrow', _formatCurrency(transaction['escrowAmount'])),
+              // ✅ TAMBAHAN: RATING JIKA ADA
+              if (transaction['rating'] != null)
+                _buildInfoRow('Rating', '${transaction['rating']}/5 ⭐'),
             ]),
 
             const SizedBox(height: 16),
@@ -174,23 +181,24 @@ class _TransactionDetailScreenState extends ConsumerState<TransactionDetailScree
     );
   }
 
+  // ✅ PERBAIKAN STATUS CHIP DENGAN COMPLETED
   Widget _buildStatusChip(String status) {
     final statusColors = {
       'pending': Colors.orange,
-      'confirmed': Colors.blue,
+      'paid': Colors.blue,
       'shipped': Colors.purple,
       'delivered': Colors.green,
-      'completed': Colors.teal,
-      'cancelled': Colors.red,
+      'completed': Colors.teal, // ✅ TAMBAHAN
+      'refunded': Colors.red,
     };
 
     final statusLabels = {
       'pending': 'Menunggu',
-      'confirmed': 'Dikonfirmasi',
+      'paid': 'Dibayar',
       'shipped': 'Dikirim',
       'delivered': 'Diterima',
-      'completed': 'Selesai',
-      'cancelled': 'Dibatalkan',
+      'completed': 'Selesai', // ✅ TAMBAHAN
+      'refunded': 'Dibatalkan',
     };
 
     final color = statusColors[status.toLowerCase()] ?? Colors.grey;
@@ -376,17 +384,20 @@ class _TransactionDetailScreenState extends ConsumerState<TransactionDetailScree
     );
   }
 
+  // ✅ PERBAIKAN TIMELINE DENGAN COMPLETED
   Widget _buildTimelineCard(Map<String, dynamic> transaction) {
     return _buildInfoCard('Timeline', [
       _buildTimelineItem('Dibuat', transaction['createdAt'], Icons.add_shopping_cart),
-      if (transaction['confirmedAt'] != null)
-        _buildTimelineItem('Dikonfirmasi', transaction['confirmedAt'], Icons.check_circle),
+      if (transaction['paidAt'] != null || transaction['status'] != 'pending')
+        _buildTimelineItem('Dibayar', transaction['paidAt'] ?? transaction['createdAt'], Icons.payment),
       if (transaction['shippedAt'] != null)
         _buildTimelineItem('Dikirim', transaction['shippedAt'], Icons.local_shipping),
       if (transaction['deliveredAt'] != null)
         _buildTimelineItem('Diterima', transaction['deliveredAt'], Icons.done_all),
-      if (transaction['completedAt'] != null)
+      if (transaction['completedAt'] != null) // ✅ TAMBAHAN
         _buildTimelineItem('Selesai', transaction['completedAt'], Icons.star),
+      if (transaction['releaseToSellerAt'] != null)
+        _buildTimelineItem('Dana Dicairkan', transaction['releaseToSellerAt'], Icons.attach_money),
     ]);
   }
 

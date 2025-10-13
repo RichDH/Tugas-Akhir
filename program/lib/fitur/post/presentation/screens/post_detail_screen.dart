@@ -745,25 +745,34 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     }
   }
 
-// ✅ BUAT INTERESTED ORDER (BUKAN LANGSUNG PAID)
+// File: post_detail_screen.dart - PERBAIKAN METHOD _createInterestedOrder
   Future<void> _createInterestedOrder(post, int quantity, double totalAmount, String userId) async {
     try {
-      // ✅ POTONG SALDO DULU (ESCROW)
+      // ✅ GET USER ADDRESS
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      final userAddress = userDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
+
+      // ✅ POTONG SALDO DULU (ESCROW) - PERBAIKI FIELD NAME
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
           .update({
-        'saldo': FieldValue.increment(-totalAmount),
+        'saldo': FieldValue.increment(-totalAmount), // ✅ PERBAIKAN: Gunakan 'saldo' bukan 'balance'
       });
 
-      // ✅ BUAT TRANSAKSI DENGAN STATUS PENDING (INTERESTED)
+      // ✅ BUAT TRANSAKSI DENGAN ALAMAT
       await FirebaseFirestore.instance.collection('transactions').add({
         'postId': post.id,
         'buyerId': userId,
         'sellerId': post.userId,
         'amount': totalAmount,
-        'status': 'pending', // ✅ STATUS PENDING = INTERESTED
+        'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
+        'buyerAddress': userAddress, // ✅ TAMBAHAN: Alamat pembeli
         'items': [
           {
             'postId': post.id,
@@ -775,11 +784,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ],
         'isEscrow': true,
         'escrowAmount': totalAmount,
-        'isAcceptedBySeller': false, // ✅ BELUM DITERIMA PENJUAL
+        'isAcceptedBySeller': false,
         'type': 'direct_buy',
       });
 
-      // ✅ TAMPILKAN POPUP SUCCESS UNTUK INTERESTED ORDER
       _showInterestedOrderSuccessDialog(totalAmount);
 
     } catch (e) {
@@ -801,6 +809,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
     }
   }
+
 
 // ✅ DIALOG SUCCESS UNTUK INTERESTED ORDER
   void _showInterestedOrderSuccessDialog(double totalAmount) {
@@ -913,66 +922,6 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         ],
       ),
     );
-  }
-
-  void _showTransactionSuccessDialog(double totalAmount) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Transaksi Berhasil'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.check_circle,
-              size: 64,
-              color: Colors.green,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Pembayaran berhasil!',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
-              style: const TextStyle(fontSize: 16),
-            ),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.push('/transaction-history');
-            },
-            child: const Text('Lihat Riwayat'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createTransaction(post, int quantity, double totalAmount, String userId) async {
-    await FirebaseFirestore.instance.collection('transactions').add({
-      'postId': post.id,
-      'buyerId': userId,
-      'sellerId': post.userId,
-      'amount': totalAmount,
-      'status': 'paid',
-      'createdAt': FieldValue.serverTimestamp(),
-      'items': [
-        {
-          'postId': post.id,
-          'title': post.title,
-          'price': post.price ?? 0,
-          'quantity': quantity,
-          'imageUrl': post.imageUrls.isNotEmpty ? post.imageUrls[0] : '',
-        }
-      ],
-      'isEscrow': true,
-      'escrowAmount': totalAmount,
-    });
   }
 
   Future<void> _postComment() async {
