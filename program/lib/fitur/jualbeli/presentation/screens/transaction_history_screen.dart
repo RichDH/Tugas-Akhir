@@ -594,28 +594,74 @@ class _TransactionHistoryCard extends ConsumerWidget {
                 ),
               ],
 
-              // ✅ COMPLETE TRANSACTION BUTTON UNTUK DELIVERED
+
               if (transaction.status == TransactionStatus.delivered) ...[
                 const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showCompleteTransactionDialog(ref, transaction.id, context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      foregroundColor: Colors.white,
+                Row(
+                  children: [
+                    // Tombol Retur
+                    Expanded(
+                      flex: 1,
+                      child: OutlinedButton.icon(
+                        onPressed: () => _navigateToCreateReturnRequest(context, transaction.id),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red, width: 1.5),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: const Icon(Icons.assignment_return, size: 18),
+                        label: const Text('Retur', style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
                     ),
-                    icon: const Icon(Icons.star_outline, size: 18),
-                    label: const Text('Selesaikan Transaksi'),
-                  ),
+                    const SizedBox(width: 12),
+                    // Tombol Selesaikan
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showCompleteTransactionDialog(ref, transaction.id, context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.teal,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        icon: const Icon(Icons.star_outline, size: 18),
+                        label: const Text('Selesaikan', style: TextStyle(fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
                 ),
               ],
+
             ],
           ),
         ),
       ),
     );
   }
+
+  void _navigateToCreateReturnRequest(BuildContext context, String transactionId) {
+    // Pastikan transactionId tidak null
+    if (transactionId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('ID transaksi tidak valid'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    print('Navigating to return request with transactionId: $transactionId'); // Debug
+    GoRouter.of(context).push('/create-return-request/$transactionId');
+  }
+
+
 
   // ✅ MARK AS DELIVERED
   void _markAsDelivered(WidgetRef ref, String transactionId, BuildContext context) {
@@ -642,6 +688,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
       ),
     );
   }
+
+
 
   // ✅ COMPLETE TRANSACTION DIALOG DENGAN RATING
   void _showCompleteTransactionDialog(WidgetRef ref, String transactionId, BuildContext context) {

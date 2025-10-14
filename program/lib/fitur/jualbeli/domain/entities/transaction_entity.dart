@@ -22,7 +22,7 @@ class Transaction extends Equatable {
   final bool isAcceptedBySeller;
   final String? rejectionReason;
   final int? rating;
-  final String? buyerAddress; // ✅ TAMBAHAN: Alamat pembeli
+  final String? buyerAddress;
 
   const Transaction({
     required this.id,

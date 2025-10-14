@@ -1,364 +1,311 @@
-// File: lib/fitur/profile/presentation/screens/list_interested_order_screen.dart
-
+// File: list_interested_order_screen.dart - PERBAIKAN LENGKAP
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:program/app/providers/firebase_providers.dart';
-import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
-import '../../../jualbeli/domain/entities/transaction_entity.dart';
+import 'package:go_router/go_router.dart';
+import '../../../jualbeli/presentation/providers/transaction_provider.dart';
 
-// ✅ BUAT AUTH-SAFE TRANSACTION PROVIDER BARU
-final safeTransactionsBySellerProvider = StreamProvider.family<List<Transaction>, String>((ref, sellerId) {
-  // ✅ GUARD 1: PASTIKAN AUTH STATE READY DULU
-  final authState = ref.watch(authStateChangesProvider);
-
-  return authState.when(
-    // Jika auth loading, return empty stream
-    loading: () => Stream.value([]),
-
-    // Jika auth error, return error stream
-    error: (error, _) => Stream.error(error),
-
-    // Hanya jika auth success dan user match
-    data: (user) {
-      if (user == null) {
-        return Stream.error('User not authenticated');
-      }
-
-      if (user.uid != sellerId) {
-        return Stream.error('User ID mismatch');
-      }
-
-      // ✅ SEKARANG AMAN UNTUK AKSES FIRESTORE
-      print('✅ Safe to access Firestore for seller: ${user.uid}');
-
-      // Buat direct firestore stream yang aman
-      final firestore = ref.watch(firebaseFirestoreProvider);
-
-      return firestore
-          .collection('transactions')
-          .where('sellerId', isEqualTo: sellerId)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .map((snapshot) {
-        return snapshot.docs.map((doc) {
-          final data = doc.data();
-          return Transaction(
-            id: doc.id,
-            postId: data['postId'] ?? '',
-            buyerId: data['buyerId'] ?? '',
-            sellerId: data['sellerId'] ?? '',
-            amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
-            status: TransactionStatus.values.firstWhere(
-                  (e) => e.name == data['status'],
-              orElse: () => TransactionStatus.pending,
-            ),
-            createdAt: data['createdAt'] ?? Timestamp.now(),
-            shippedAt: data['shippedAt'],
-            deliveredAt: data['deliveredAt'],
-            refundReason: data['refundReason'],
-            isEscrow: data['isEscrow'] ?? false,
-            escrowAmount: (data['escrowAmount'] as num?)?.toDouble() ?? 0.0,
-            releaseToSellerAt: data['releaseToSellerAt'],
-            isAcceptedBySeller: data['isAcceptedBySeller'] ?? false,
-            rejectionReason: data['rejectionReason'],
-          );
-        }).toList();
-      }).handleError((error) {
-        print('❌ Firestore stream error: $error');
-        throw error;
-      });
-    },
-  );
-});
-
-class ListInterestedOrderScreen extends ConsumerWidget {
+class ListInterestedOrderScreen extends ConsumerStatefulWidget {
   const ListInterestedOrderScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateChangesProvider);
+  ConsumerState<ListInterestedOrderScreen> createState() => _ListInterestedOrderScreenState();
+}
 
-    return authState.when(
-      loading: () => Scaffold(
-        appBar: AppBar(title: const Text('List Pesanan')),
-        body: const Center(child: CircularProgressIndicator()),
-      ),
-      error: (error, stack) => Scaffold(
-        appBar: AppBar(title: const Text('List Pesanan')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text('Auth Error: $error'),
-              ElevatedButton(
-                onPressed: () => ref.invalidate(authStateChangesProvider),
-                child: const Text('Coba Lagi'),
-              ),
-            ],
-          ),
+class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderScreen> {
+  final User? currentUser = FirebaseAuth.instance.currentUser;
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUser == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Pesanan Masuk'),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
         ),
-      ),
-      data: (user) {
-        if (user == null) {
-          return Scaffold(
-            appBar: AppBar(title: const Text('List Pesanan')),
-            body: const Center(
-              child: Text('Silakan login terlebih dahulu'),
-            ),
-          );
-        }
+        body: const Center(
+          child: Text('Silakan login terlebih dahulu'),
+        ),
+      );
+    }
 
-        return _buildAuthenticatedContent(context, ref, user.uid);
-      },
-    );
-  }
-
-  Widget _buildAuthenticatedContent(BuildContext context, WidgetRef ref, String userId) {
     return DefaultTabController(
-      length: 2,
+      length: 4, // Semua, Menunggu, Terkirim, Selesai
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('List Pesanan'),
+          title: const Text('Pesanan Masuk'),
+          backgroundColor: Colors.blue,
+          foregroundColor: Colors.white,
           bottom: const TabBar(
+            isScrollable: true,
+            indicatorColor: Colors.white,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
             tabs: [
-              Tab(text: 'List Interested'),
-              Tab(text: 'List Order'),
+              Tab(text: 'Semua'),
+              Tab(text: 'Menunggu'),
+              Tab(text: 'Terkirim'),
+              Tab(text: 'Selesai'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            _buildListInterested(context, ref, userId),
-            _buildListOrder(context, ref, userId),
+            _buildAllOrders(),
+            _buildPendingOrders(),
+            _buildShippedDeliveredOrders(), // Shipped + Delivered
+            _buildCompletedOrders(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildListInterested(BuildContext context, WidgetRef ref, String userId) {
-    // ✅ GUNAKAN SAFE PROVIDER YANG BARU
-    final transactionsAsync = ref.watch(safeTransactionsBySellerProvider(userId));
+  // ✅ TAB SEMUA PESANAN
+  Widget _buildAllOrders() {
+    return _buildOrdersList(statusFilter: null);
+  }
 
-    return transactionsAsync.when(
-      data: (transactions) {
-        final interestedTransactions = transactions
-            .where((t) => t.status == TransactionStatus.pending)
-            .toList();
+  // ✅ TAB PESANAN MENUNGGU (PENDING + PAID)
+  Widget _buildPendingOrders() {
+    return _buildOrdersList(statusFilter: ['pending', 'paid']);
+  }
 
-        if (interestedTransactions.isEmpty) {
-          return const Center(child: Text('Belum ada pesanan yang masuk.'));
+  // ✅ TAB PESANAN TERKIRIM (SHIPPED + DELIVERED)
+  Widget _buildShippedDeliveredOrders() {
+    return _buildOrdersList(statusFilter: ['shipped', 'delivered']);
+  }
+
+  // ✅ TAB PESANAN SELESAI (COMPLETED)
+  Widget _buildCompletedOrders() {
+    return _buildOrdersList(statusFilter: ['completed']);
+  }
+
+  // ✅ STREAM BUILDER UNTUK ORDERS BERDASARKAN FILTER STATUS
+  Widget _buildOrdersList({List<String>? statusFilter}) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _getTransactionsStream(statusFilter),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
         }
+
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text('Error: ${snapshot.error}'),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => setState(() {}),
+                  child: const Text('Coba Lagi'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  statusFilter == null
+                      ? 'Belum ada pesanan masuk'
+                      : 'Tidak ada pesanan dengan status ini',
+                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final transactions = snapshot.data!.docs;
 
         return RefreshIndicator(
           onRefresh: () async {
-            ref.invalidate(safeTransactionsBySellerProvider);
+            setState(() {});
           },
           child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: interestedTransactions.length,
+            padding: const EdgeInsets.all(16),
+            itemCount: transactions.length,
             itemBuilder: (context, index) {
-              final transaction = interestedTransactions[index];
-              return _TransactionCard(
-                transaction: transaction,
-                isInterested: true,
-              );
+              final transaction = transactions[index];
+              final data = transaction.data() as Map<String, dynamic>;
+              return _buildOrderCard(transaction.id, data);
             },
           ),
         );
       },
-      loading: () => const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Memuat pesanan...'),
-          ],
-        ),
-      ),
-      error: (err, stack) {
-        print('❌ Safe provider error: $err');
-
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              const Text('Terjadi kesalahan:',
-                  style: TextStyle(fontWeight: FontWeight.bold)
-              ),
-              const SizedBox(height: 8),
-              Text(
-                  err.toString().contains('permission-denied')
-                      ? 'Sesi login bermasalah. Silakan logout dan login ulang.'
-                      : err.toString(),
-                  textAlign: TextAlign.center
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () {
-                  ref.invalidate(authStateChangesProvider);
-                  ref.invalidate(safeTransactionsBySellerProvider);
-                },
-                icon: const Icon(Icons.refresh),
-                label: const Text('Coba Lagi'),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
-  Widget _buildListOrder(BuildContext context, WidgetRef ref, String userId) {
-    // ✅ GUNAKAN SAFE PROVIDER YANG SAMA
-    final transactionsAsync = ref.watch(safeTransactionsBySellerProvider(userId));
+  // ✅ GET TRANSACTIONS STREAM DENGAN FILTER STATUS
+  Stream<QuerySnapshot> _getTransactionsStream(List<String>? statusFilter) {
+    Query query = FirebaseFirestore.instance
+        .collection('transactions')
+        .where('sellerId', isEqualTo: currentUser!.uid)
+        .orderBy('createdAt', descending: true);
 
-    return transactionsAsync.when(
-      data: (transactions) {
-        final orderTransactions = transactions
-            .where((t) =>
-        t.status == TransactionStatus.paid ||
-            t.status == TransactionStatus.shipped
-        )
-            .toList();
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      query = query.where('status', whereIn: statusFilter);
+    }
 
-        if (orderTransactions.isEmpty) {
-          return const Center(child: Text('Belum ada pesanan yang diterima.'));
-        }
-
-        return RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(safeTransactionsBySellerProvider);
-          },
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: orderTransactions.length,
-            itemBuilder: (context, index) {
-              final transaction = orderTransactions[index];
-              return _TransactionCard(
-                transaction: transaction,
-                isInterested: false,
-              );
-            },
-          ),
-        );
-      },
-      loading: () => const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Memuat pesanan...'),
-          ],
-        ),
-      ),
-      error: (err, stack) {
-        print('❌ List order error: $err');
-
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              const Text('Terjadi kesalahan:',
-                  style: TextStyle(fontWeight: FontWeight.bold)
-              ),
-              const SizedBox(height: 8),
-              Text(
-                  err.toString().contains('permission-denied')
-                      ? 'Sesi login bermasalah. Silakan logout dan login ulang.'
-                      : err.toString(),
-                  textAlign: TextAlign.center
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () {
-                  ref.invalidate(authStateChangesProvider);
-                  ref.invalidate(safeTransactionsBySellerProvider);
-                },
-                icon: const Icon(Icons.refresh),
-                label: const Text('Coba Lagi'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+    return query.snapshots();
   }
-}
 
-// ✅ _TransactionCard TETAP SAMA SEPERTI SEBELUMNYA
-class _TransactionCard extends ConsumerWidget {
-  final Transaction transaction;
-  final bool isInterested;
+  // ✅ BUILD ORDER CARD YANG BISA DIKLIK KE DETAIL + TOMBOL MARK AS DELIVERED
+  Widget _buildOrderCard(String transactionId, Map<String, dynamic> data) {
+    final String status = data['status'] ?? 'unknown';
+    final double amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+    final String buyerId = data['buyerId'] ?? '';
+    final Timestamp? createdAt = data['createdAt'];
+    final String buyerAddress = data['buyerAddress'] ?? 'Alamat tidak tersedia';
 
-  const _TransactionCard({required this.transaction, required this.isInterested});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final formattedPrice = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(transaction.amount);
-    final buyerNameAsync = ref.watch(userNameProvider(transaction.buyerId));
-
-    return GestureDetector(
-      onTap: () {
-        GoRouter.of(context).push('/transaction-detail/${transaction.id}');
-      },
-      child: Card(
-        margin: const EdgeInsets.all(8),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      child: InkWell(
+        // ✅ TAMBAHKAN ONTAK UNTUK KLIK KE DETAIL
+        onTap: () {
+          GoRouter.of(context).push('/transaction-detail/$transactionId');
+        },
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ✅ HEADER ROW
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('ID: ${transaction.id}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(transaction.status.name, style: const TextStyle(color: Colors.blue)),
+                  Text(
+                    'ID: ${transactionId.substring(0, 8)}...',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      _buildStatusChip(status),
+                      const SizedBox(width: 8),
+                      const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              buyerNameAsync.when(
-                data: (name) => Text('Pembeli: $name'),
-                loading: () => const Text('Memuat...'),
-                error: (err, stack) => Text('Pembeli: ${transaction.buyerId}'),
-              ),
-              Text('Total: $formattedPrice'),
-              Text('Dibuat: ${DateFormat('dd/MM/yyyy HH:mm').format(transaction.createdAt.toDate())}'),
+
               const SizedBox(height: 12),
 
-              if (isInterested)
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    ElevatedButton(
-                      onPressed: () => _acceptTransaction(ref, transaction.id, context),
-                      child: const Text('Terima'),
+              // ✅ BUYER INFO
+              FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('users').doc(buyerId).get(),
+                builder: (context, snapshot) {
+                  final buyerName = snapshot.data?.get('username') ?? buyerId;
+                  return Row(
+                    children: [
+                      const Icon(Icons.person, size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text('Pembeli: $buyerName'),
+                    ],
+                  );
+                },
+              ),
+
+              const SizedBox(height: 8),
+
+              // ✅ AMOUNT
+              Row(
+                children: [
+                  const Icon(Icons.attach_money, size: 16, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Total: ${_formatCurrency(amount)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
                     ),
-                    ElevatedButton(
-                      onPressed: () => _rejectTransaction(ref, transaction.id, context),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                      child: const Text('Tolak'),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // ✅ DATE
+              if (createdAt != null)
+                Row(
+                  children: [
+                    const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormat('dd MMM yyyy, HH:mm').format(createdAt.toDate()),
                     ),
                   ],
-                )
-              else if (transaction.status == TransactionStatus.paid)
-                ElevatedButton(
-                  onPressed: () => _markAsShipped(ref, transaction.id, context),
-                  child: const Text('Ubah Status ke Dikirim'),
-                )
-              else if (transaction.status == TransactionStatus.shipped)
-                  const Text('Sudah dikirim', style: TextStyle(color: Colors.green)),
+                ),
+
+              const SizedBox(height: 8),
+
+              // ✅ BUYER ADDRESS
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.location_on, size: 16, color: Colors.blue),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Alamat Pengiriman:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            buyerAddress,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ✅ ITEMS INFO
+              if (data['items'] != null) ...[
+                const SizedBox(height: 12),
+                _buildItemsList(data['items'] as List),
+              ],
+
+              // ✅ ACTION BUTTONS BERDASARKAN STATUS
+              const SizedBox(height: 16),
+              _buildActionButtons(transactionId, status, data),
             ],
           ),
         ),
@@ -366,127 +313,496 @@ class _TransactionCard extends ConsumerWidget {
     );
   }
 
-  // ✅ METHODS TETAP SAMA SEPERTI SEBELUMNYA
-  void _acceptTransaction(WidgetRef ref, String transactionId, BuildContext context) async {
-    await ref.read(transactionProvider.notifier).acceptTransaction(transactionId);
-
-    final firestore = FirebaseFirestore.instance;
-    final userDoc = await firestore.collection('users').doc(ref.read(firebaseAuthProvider).currentUser!.uid).get();
-    final isVerified = userDoc.data()?['isVerified'] == true;
-
-    if (isVerified) {
-      _showAcceptAndReleaseDialog(context, transactionId, ref);
-    } else {
-      _showSuccessDialog(context, 'Pesanan berhasil diterima!\nDana akan ditahan hingga barang sampai.');
-    }
-  }
-
-  void _rejectTransaction(WidgetRef ref, String transactionId, BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Tolak Pesanan'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.warning, size: 48, color: Colors.orange),
-              const SizedBox(height: 8),
-              const Text('Dana akan dikembalikan ke pembeli'),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  hintText: 'Alasan penolakan...',
-                  border: OutlineInputBorder(),
+  // ✅ BUILD ACTION BUTTONS BERDASARKAN STATUS TRANSAKSI
+  Widget _buildActionButtons(String transactionId, String status, Map<String, dynamic> data) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showAcceptDialog(transactionId),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
                 ),
-                maxLines: 3,
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Terima Pesanan'),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
-            ElevatedButton(
-              onPressed: () async {
-                await _processRejectionWithRefund(ref, transactionId, controller.text);
-                Navigator.pop(context);
-                _showSuccessDialog(context, 'Pesanan berhasil ditolak.\nDana telah dikembalikan ke pembeli.');
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Tolak & Kembalikan Dana', style: TextStyle(color: Colors.white)),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showRejectDialog(transactionId),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Tolak Pesanan'),
+              ),
             ),
           ],
         );
-      },
-    );
-  }
 
-  Future<void> _processRejectionWithRefund(WidgetRef ref, String transactionId, String reason) async {
-    try {
-      final transactionDoc = await FirebaseFirestore.instance
-          .collection('transactions')
-          .doc(transactionId)
-          .get();
+      case 'paid':
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.schedule, color: Colors.blue, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Siapkan barang untuk dikirim',
+                style: TextStyle(
+                  color: Colors.blue,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
 
-      if (transactionDoc.exists) {
-        final transactionData = transactionDoc.data()!;
-        final buyerId = transactionData['buyerId'] as String;
-        final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
+      case 'shipped':
+      // ✅ TOMBOL MARK AS DELIVERED UNTUK STATUS SHIPPED
+        return SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _showMarkAsDeliveredDialog(transactionId),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.done_all, size: 18),
+            label: const Text('Tandai Sudah Diterima'),
+          ),
+        );
 
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(buyerId)
-            .update({
-          'saldo': FieldValue.increment(escrowAmount),
-        });
+      case 'delivered':
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.green.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.green.withOpacity(0.3)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.done_all, color: Colors.green, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Menunggu pembeli selesaikan transaksi',
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
 
-        await ref.read(transactionProvider.notifier).rejectTransaction(transactionId, reason);
+      case 'completed':
+      // ✅ SHOW RATING AND COMPLETION INFO
+        final int? rating = data['rating'] as int?;
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.teal.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.teal.withOpacity(0.3)),
+          ),
+          child: Column(
+            children: [
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.star, color: Colors.teal, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Transaksi Selesai - Dana Telah Dicairkan',
+                    style: TextStyle(
+                      color: Colors.teal,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              if (rating != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('Rating: ', style: TextStyle(fontSize: 12)),
+                    ...List.generate(5, (index) => Icon(
+                      index < rating ? Icons.star : Icons.star_border,
+                      size: 16,
+                      color: Colors.amber,
+                    )),
+                    Text(' ($rating/5)', style: const TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
 
-        print('✅ Refund processed: $escrowAmount to buyer $buyerId');
-      }
-    } catch (e) {
-      print('❌ Error processing refund: $e');
-      throw e;
+      case 'refunded':
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.red.withOpacity(0.3)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cancel, color: Colors.red, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Pesanan Dibatalkan',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        );
+
+      default:
+        return const SizedBox.shrink();
     }
   }
 
-  void _markAsShipped(WidgetRef ref, String transactionId, BuildContext context) {
-    ref.read(transactionProvider.notifier).markAsShipped(transactionId);
-    _showSuccessDialog(context, 'Status pesanan diubah menjadi:\nDikirim');
-  }
-
-  void _showAcceptAndReleaseDialog(BuildContext context, String transactionId, WidgetRef ref) {
+  // ✅ DIALOG MARK AS DELIVERED UNTUK PENJUAL
+  void _showMarkAsDeliveredDialog(String transactionId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Pesanan Diterima!'),
-        content: const Text('Akun Anda sudah terverifikasi.\nIngin mencairkan dana sekarang?'),
+        title: const Row(
+          children: [
+            Icon(Icons.done_all, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Konfirmasi Penerimaan'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Apakah barang sudah diterima oleh pembeli?'),
+            SizedBox(height: 12),
+            Text(
+              '⚠️ Pastikan pembeli sudah benar-benar menerima barang sebelum menandai status ini.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Nanti Saja')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
-              ref.read(transactionProvider.notifier).releaseEscrowFunds(transactionId);
-              _showSuccessDialog(context, 'Dana berhasil dicairkan ke akun Anda!');
+              await _markAsDelivered(transactionId);
             },
-            child: const Text('Cairkan Dana'),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text(
+              'Ya, Sudah Diterima',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _showSuccessDialog(BuildContext context, String message) {
+  // ✅ MARK AS DELIVERED FUNCTION
+  Future<void> _markAsDelivered(String transactionId) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Mengupdate status...'),
+            ],
+          ),
+        ),
+      );
+
+      // Call provider to mark as delivered
+      await ref.read(transactionProvider.notifier).markAsDelivered(transactionId);
+
+      // Close loading dialog
+      Navigator.pop(context);
+
+      // Show success dialog
+      _showSuccessDialog('Berhasil menandai pesanan sebagai diterima!');
+
+    } catch (e) {
+      // Close loading dialog
+      Navigator.pop(context);
+
+      // Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // ✅ DIALOG ACCEPT ORDER
+  void _showAcceptDialog(String transactionId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Terima Pesanan'),
+        content: const Text('Apakah Anda yakin ingin menerima pesanan ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _acceptOrder(transactionId);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Terima', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ DIALOG REJECT ORDER
+  void _showRejectDialog(String transactionId) {
+    final reasonController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tolak Pesanan'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Alasan penolakan:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                hintText: 'Masukkan alasan penolakan...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (reasonController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Alasan penolakan harus diisi')),
+                );
+                return;
+              }
+              Navigator.pop(context);
+              await _rejectOrder(transactionId, reasonController.text.trim());
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Tolak', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ ACCEPT ORDER FUNCTION
+  Future<void> _acceptOrder(String transactionId) async {
+    try {
+      await FirebaseFirestore.instance.collection('transactions').doc(transactionId).update({
+        'status': 'paid',
+        'isAcceptedBySeller': true,
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      _showSuccessDialog('Pesanan berhasil diterima!');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // ✅ REJECT ORDER FUNCTION
+  Future<void> _rejectOrder(String transactionId, String reason) async {
+    try {
+      // Get transaction data for refund
+      final transactionDoc = await FirebaseFirestore.instance
+          .collection('transactions')
+          .doc(transactionId)
+          .get();
+
+      final transactionData = transactionDoc.data();
+      final buyerId = transactionData?['buyerId'] as String?;
+      final amount = (transactionData?['amount'] as num?)?.toDouble() ?? 0.0;
+
+      // Update transaction status
+      await FirebaseFirestore.instance.collection('transactions').doc(transactionId).update({
+        'status': 'refunded',
+        'rejectionReason': reason,
+        'rejectedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Refund money to buyer if buyerId exists
+      if (buyerId != null && amount > 0) {
+        await FirebaseFirestore.instance.collection('users').doc(buyerId).update({
+          'saldo': FieldValue.increment(amount),
+        });
+      }
+
+      _showSuccessDialog('Pesanan berhasil ditolak dan dana dikembalikan!');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // ✅ SUCCESS DIALOG
+  void _showSuccessDialog(String message) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Icon(Icons.check_circle, color: Colors.green, size: 64),
         content: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
         ],
       ),
     );
+  }
+
+  // ✅ STATUS CHIP
+  Widget _buildStatusChip(String status) {
+    final statusColors = {
+      'pending': Colors.orange,
+      'paid': Colors.blue,
+      'shipped': Colors.purple,
+      'delivered': Colors.green,
+      'completed': Colors.teal,
+      'refunded': Colors.red,
+    };
+
+    final statusLabels = {
+      'pending': 'Menunggu',
+      'paid': 'Dibayar',
+      'shipped': 'Dikirim',
+      'delivered': 'Diterima',
+      'completed': 'Selesai',
+      'refunded': 'Ditolak',
+    };
+
+    final color = statusColors[status.toLowerCase()] ?? Colors.grey;
+    final label = statusLabels[status.toLowerCase()] ?? status;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  // ✅ BUILD ITEMS LIST
+  Widget _buildItemsList(List items) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Items (${items.length}):',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...items.take(3).map((item) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(
+              '• ${item['title'] ?? 'Unknown Item'} (${item['quantity'] ?? 1}x)',
+              style: const TextStyle(fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )),
+          if (items.length > 3)
+            Text(
+              '... dan ${items.length - 3} item lainnya',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ FORMAT CURRENCY
+  String _formatCurrency(double amount) {
+    return NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    ).format(amount);
   }
 }

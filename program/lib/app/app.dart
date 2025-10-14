@@ -34,6 +34,7 @@ import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
 import '../fitur/admin/presentation/screens/return_review_screen.dart';
 import '../fitur/cart/presentation/screens/cart_screen.dart';
+import '../fitur/jualbeli/presentation/screens/create_return_request_screen.dart';
 import '../fitur/jualbeli/presentation/screens/request_history_screen.dart';
 import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_detail_screen.dart';
@@ -157,6 +158,13 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/edit-profile',
         builder: (context, state) => const EditProfileScreen(),
+      ),
+      GoRoute(
+        path: '/create-return-request/:transactionId',
+        builder: (context, state) {
+          final transactionId = state.pathParameters['transactionId']!;
+          return CreateReturnRequestScreen(transactionId: transactionId);
+        },
       ),
 
 

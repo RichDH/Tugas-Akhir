@@ -50,7 +50,7 @@ cron.schedule('*/15 * * * *', async () => {
   console.log('[CRON] Menjalankan auto-complete transaksi...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 200, now.nanoseconds);
 
     const transactions = await admin.firestore()
       .collection('transactions')

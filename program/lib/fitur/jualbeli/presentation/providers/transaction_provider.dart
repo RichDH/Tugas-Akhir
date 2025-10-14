@@ -133,6 +133,9 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
   // --- Update Status Pengiriman ---
+  // File: transaction_provider.dart - TAMBAHAN METHOD MARK AS SHIPPED
+
+// ✅ TAMBAHAN: Method untuk penjual mark sebagai shipped
   Future<void> markAsShipped(String transactionId) async {
     state = const AsyncLoading();
     try {
@@ -142,6 +145,9 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, StackTrace.current);
     }
   }
+
+
+
 
   Future<void> markAsDelivered(String transactionId) async {
     state = const AsyncLoading();
@@ -184,6 +190,8 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
       state = AsyncError(e, StackTrace.current);
     }
   }
+
+
 
   // --- Stream untuk transaksi berdasarkan buyerId ---
   Stream<List<Transaction>> getTransactionsByBuyer(String buyerId) {
