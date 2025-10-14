@@ -74,7 +74,7 @@ class ReturnRequestRepositoryImpl implements ReturnRequestRepository {
   Stream<List<ReturnRequest>> getRespondedReturnRequests() {
     return _firestore
         .collection('return_requests')
-        .where('status', isEqualTo: 'seller_responded')
+        .where('status', isEqualTo: 'sellerResponded')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) => ReturnRequest.fromFirestore(doc)).toList());
@@ -97,7 +97,7 @@ class ReturnRequestRepositoryImpl implements ReturnRequestRepository {
       await _firestore.collection('return_requests').doc(requestId).update({
         'responseReason': responseReason,
         'respondedAt': FieldValue.serverTimestamp(),
-        'status': 'seller_responded',
+        'status': 'sellerResponded',
       });
     } catch (e) {
       throw Exception('Gagal merespon retur: $e');

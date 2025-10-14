@@ -90,7 +90,7 @@ cron.schedule('*/15 * * * *', async () => {
 
     const returnRequests = await admin.firestore()
       .collection('return_requests')
-      .where('status', '==', 'awaiting_seller_response')
+      .where('status', '==', 'awaitingSellerResponse')
       .where('createdAt', '<=', fifteenMinutesAgo)
       .get();
 

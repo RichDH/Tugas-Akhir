@@ -30,7 +30,7 @@ final safeReturnRequestsBySellerProvider = StreamProvider.family<List<ReturnRequ
         return firestore
             .collection('return_requests')
             .where('sellerId', isEqualTo: sellerId)
-            .where('status', isEqualTo: 'awaiting_seller_response') // ✅ HANYA YANG PERLU DIRESPON
+            .where('status', isEqualTo: 'awaitingSellerResponse') // ✅ HANYA YANG PERLU DIRESPON
             .orderBy('createdAt', descending: true)
             .snapshots()
             .map((snapshot) {

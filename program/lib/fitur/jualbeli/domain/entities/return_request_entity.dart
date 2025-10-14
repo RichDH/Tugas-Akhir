@@ -47,8 +47,8 @@ class ReturnRequest extends Equatable {
       case 'pending': return ReturnStatus.pending;
       case 'approved': return ReturnStatus.approved;
       case 'rejected': return ReturnStatus.rejected;
-      case 'awaiting_seller_response': return ReturnStatus.awaitingSellerResponse;
-      case 'seller_responded': return ReturnStatus.sellerResponded;
+      case 'awaitingSellerResponse': return ReturnStatus.awaitingSellerResponse;
+      case 'sellerResponded': return ReturnStatus.sellerResponded;
       case 'final_rejected': return ReturnStatus.finalRejected;
       case 'final_approved': return ReturnStatus.finalApproved;
       default: return ReturnStatus.pending;
