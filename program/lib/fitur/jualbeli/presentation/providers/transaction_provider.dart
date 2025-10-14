@@ -228,8 +228,29 @@ final transactionsBySellerStreamProvider = StreamProvider.family<List<Transactio
 
 // ✅ PROVIDER UNTUK STREAM TRANSAKSI BERDASARKAN ID
 final transactionByIdStreamProvider = StreamProvider.family<Transaction, String>((ref, transactionId) {
-  final notifier = ref.watch(transactionProvider.notifier);
-  return notifier.getTransactionById(transactionId);
+  final firestore = ref.watch(firebaseFirestoreProvider);
+
+  // Validasi input
+  if (transactionId.isEmpty) {
+    return Stream.error('Transaction ID tidak boleh kosong');
+  }
+
+  return firestore
+      .collection('transactions')
+      .doc(transactionId)
+      .snapshots()
+      .map((doc) {
+    if (!doc.exists) {
+      throw Exception('Transaksi dengan ID $transactionId tidak ditemukan');
+    }
+
+    try {
+      return Transaction.fromFirestore(doc);
+    } catch (e) {
+      print('Error parsing transaction $transactionId: $e');
+      throw Exception('Gagal mengambil data transaksi: $e');
+    }
+  });
 });
 
 

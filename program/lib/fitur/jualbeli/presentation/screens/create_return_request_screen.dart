@@ -8,6 +8,7 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/return_request_provider.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
 import 'package:program/fitur/jualbeli/domain/entities/transaction_entity.dart';
+import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
 
 class CreateReturnRequestScreen extends ConsumerStatefulWidget {
@@ -24,7 +25,19 @@ class _CreateReturnRequestScreenState extends ConsumerState<CreateReturnRequestS
   final List<File> _evidenceImages = [];
   bool _isSubmitting = false;
 
-  final List<String> _returnReasons = [
+  late CloudinaryPublic cloudinary;
+  final String _cloudinaryCloudName = "ds656gqe2";
+  final String _cloudinaryUploadPreset = "ngoper_unsigned_upload";
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ INISIALISASI CLOUDINARY
+    cloudinary = CloudinaryPublic(
+        _cloudinaryCloudName, _cloudinaryUploadPreset, cache: false);
+  }
+
+    final List<String> _returnReasons = [
     'Barang tidak sesuai deskripsi',
     'Barang rusak/cacat saat diterima',
     'Barang tidak lengkap/kurang',
@@ -518,6 +531,40 @@ class _CreateReturnRequestScreenState extends ConsumerState<CreateReturnRequestS
     }
   }
 
+  Future<List<String>> _uploadEvidenceImages(String userId) async {
+    List<String> uploadedUrls = [];
+    final folderPath = "return_evidence/$userId";
+
+    for (int i = 0; i < _evidenceImages.length; i++) {
+      File file = _evidenceImages[i];
+
+      try {
+        print('Uploading evidence image ${i + 1}/${_evidenceImages.length}');
+
+        CloudinaryResponse response = await cloudinary.uploadFile(
+          CloudinaryFile.fromFile(
+            file.path,
+            folder: folderPath,
+            resourceType: CloudinaryResourceType.Image,
+          ),
+        );
+
+        if (response.secureUrl.isNotEmpty) {
+          uploadedUrls.add(response.secureUrl);
+          print('Evidence image uploaded: ${response.secureUrl}');
+        } else {
+          throw Exception('Upload gagal: URL kosong');
+        }
+      } catch (e) {
+        print('Error uploading evidence image ${i + 1}: $e');
+        // Tetap lanjutkan upload image lainnya
+        // throw Exception('Gagal upload foto bukti ke-${i + 1}: $e');
+      }
+    }
+
+    return uploadedUrls;
+  }
+
   Future<void> _submitReturnRequest() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -541,23 +588,28 @@ class _CreateReturnRequestScreenState extends ConsumerState<CreateReturnRequestS
 
       final transaction = await ref.read(transactionByIdStreamProvider(widget.transactionId).future);
 
-      // Upload evidence images to Cloudinary jika ada
-      final List<String> evidenceUrls = [];
-      // TODO: Implement image upload to Cloudinary
-      // for (File image in _evidenceImages) {
-      //   String url = await uploadToCloudinary(image);
-      //   evidenceUrls.add(url);
-      // }
+      // ✅ UPLOAD EVIDENCE IMAGES KE CLOUDINARY
+      List<String> evidenceUrls = [];
+      if (_evidenceImages.isNotEmpty) {
+        try {
+          evidenceUrls = await _uploadEvidenceImages(user.uid);
+          print('Successfully uploaded ${evidenceUrls.length} evidence images');
+        } catch (e) {
+          print('Warning: Some evidence images failed to upload: $e');
+          // Lanjutkan proses meski ada gambar yang gagal upload
+        }
+      }
 
       // Gabungkan alasan yang dipilih dengan detail keterangan
       final fullReason = '$_selectedReason\n\nDetail: ${_reasonController.text.trim()}';
 
+      // ✅ CREATE RETURN REQUEST DENGAN EVIDENCE URLS
       await ref.read(returnRequestProvider.notifier).createReturnRequest(
         transactionId: widget.transactionId,
         buyerId: user.uid,
         sellerId: transaction.sellerId,
         reason: fullReason,
-        evidenceUrls: evidenceUrls,
+        evidenceUrls: evidenceUrls, // ✅ PASS UPLOADED URLs
       );
 
       if (mounted) {
@@ -568,9 +620,27 @@ class _CreateReturnRequestScreenState extends ConsumerState<CreateReturnRequestS
           builder: (context) => AlertDialog(
             icon: const Icon(Icons.check_circle, color: Colors.green, size: 64),
             title: const Text('Retur Berhasil Diajukan'),
-            content: const Text(
-              'Pengajuan retur Anda telah dikirim dan akan ditinjau oleh admin dalam 1x24 jam. '
-                  'Anda akan mendapat notifikasi ketika ada update status retur.',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Pengajuan retur Anda telah dikirim dan akan ditinjau oleh admin dalam 1x24 jam.',
+                ),
+                if (evidenceUrls.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '${evidenceUrls.length} foto bukti berhasil diupload.',
+                    style: TextStyle(color: Colors.green[700], fontSize: 12),
+                  ),
+                ],
+                if (evidenceUrls.length < _evidenceImages.length) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Beberapa foto bukti gagal diupload, namun pengajuan retur tetap terkirim.',
+                    style: TextStyle(color: Colors.orange[700], fontSize: 12),
+                  ),
+                ],
+              ],
             ),
             actions: [
               ElevatedButton(

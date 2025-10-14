@@ -1,4 +1,4 @@
-// File: transaction_entity.dart - DIPERBAIKI
+// File: transaction_entity.dart - PERBAIKAN NULL SAFETY
 import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -42,39 +42,60 @@ class Transaction extends Equatable {
     this.isAcceptedBySeller = false,
     this.rejectionReason,
     this.rating,
-    this.buyerAddress, // ✅ TAMBAHAN
+    this.buyerAddress,
   });
 
+  // ✅ PERBAIKAN: Null safety yang lebih baik
   factory Transaction.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>?;
+
+    // Validasi data tidak null
+    if (data == null) {
+      throw Exception('Data transaksi kosong untuk ID: ${doc.id}');
+    }
+
     return Transaction(
       id: doc.id,
-      postId: data['postId'] as String,
-      buyerId: data['buyerId'] as String,
-      sellerId: data['sellerId'] as String,
-      amount: (data['amount'] as num).toDouble(),
-      status: _parseStatus(data['status'] as String),
-      createdAt: data['createdAt'] as Timestamp,
+      postId: data['postId']?.toString() ?? '', // ✅ Safe cast dengan fallback
+      buyerId: data['buyerId']?.toString() ?? '',
+      sellerId: data['sellerId']?.toString() ?? '',
+      amount: _parseDouble(data['amount']),
+      status: _parseStatus(data['status']?.toString()),
+      createdAt: data['createdAt'] as Timestamp? ?? Timestamp.now(),
       shippedAt: data['shippedAt'] as Timestamp?,
       deliveredAt: data['deliveredAt'] as Timestamp?,
       completedAt: data['completedAt'] as Timestamp?,
-      refundReason: data['refundReason'] as String?,
-      isEscrow: data['isEscrow'] as bool,
-      escrowAmount: (data['escrowAmount'] as num).toDouble(),
+      refundReason: data['refundReason']?.toString(),
+      isEscrow: data['isEscrow'] as bool? ?? false,
+      escrowAmount: _parseDouble(data['escrowAmount']),
       releaseToSellerAt: data['releaseToSellerAt'] as Timestamp?,
       isAcceptedBySeller: data['isAcceptedBySeller'] as bool? ?? false,
-      rejectionReason: data['rejectionReason'] as String?,
+      rejectionReason: data['rejectionReason']?.toString(),
       rating: data['rating'] as int?,
-      buyerAddress: data['buyerAddress'] as String?, // ✅ TAMBAHAN
+      buyerAddress: data['buyerAddress']?.toString(),
     );
   }
 
-  static TransactionStatus _parseStatus(String status) {
-    switch (status) {
+  // ✅ Helper method untuk parsing double yang aman
+  static double _parseDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  // ✅ Helper method untuk parsing status yang aman
+  static TransactionStatus _parseStatus(String? status) {
+    if (status == null) return TransactionStatus.pending;
+
+    switch (status.toLowerCase()) {
       case 'paid': return TransactionStatus.paid;
       case 'shipped': return TransactionStatus.shipped;
       case 'delivered': return TransactionStatus.delivered;
-      case 'completed': return TransactionStatus.completed; // ✅ TAMBAHAN
+      case 'completed': return TransactionStatus.completed;
       case 'refunded': return TransactionStatus.refunded;
       default: return TransactionStatus.pending;
     }
@@ -86,7 +107,7 @@ class Transaction extends Equatable {
       'buyerId': buyerId,
       'sellerId': sellerId,
       'amount': amount,
-      'status': status.toString().split('.').last,
+      'status': status.name,
       'createdAt': createdAt,
       'shippedAt': shippedAt,
       'deliveredAt': deliveredAt,
@@ -98,7 +119,7 @@ class Transaction extends Equatable {
       'isAcceptedBySeller': isAcceptedBySeller,
       'rejectionReason': rejectionReason,
       'rating': rating,
-      'buyerAddress': buyerAddress, // ✅ TAMBAHAN
+      'buyerAddress': buyerAddress,
     };
   }
 
