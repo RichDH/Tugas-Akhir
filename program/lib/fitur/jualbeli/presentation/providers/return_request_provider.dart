@@ -11,6 +11,8 @@ import 'package:http/http.dart' as http;
 import 'package:program/app/constants/app_constants.dart';
 import 'dart:convert';
 
+import '../../domain/entities/transaction_entity.dart';
+
 final returnRequestRepositoryProvider = Provider<ReturnRequestRepository>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   return ReturnRequestRepositoryImpl(firestore);
