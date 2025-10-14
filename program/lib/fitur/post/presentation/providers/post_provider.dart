@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../../../app/providers/firebase_providers.dart';
+import '../../data/repositories/post_repository_impl.dart';
 import '../../domain/entities/post.dart';
 
 // ✅ PROVIDER UNTUK GET POST BY ID
@@ -185,9 +186,50 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) throw Exception('User not authenticated');
 
+      // ✅ PERBAIKAN 1: AMBIL USERNAME DARI FIRESTORE
+      String username = 'User';
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+
+        if (userDoc.exists && userDoc.data()?['name'] != null) {
+          username = userDoc.data()!['name'];
+        } else if (currentUser.displayName?.isNotEmpty == true) {
+          username = currentUser.displayName!;
+        }
+      } catch (e) {
+        print('Error getting username: $e');
+        // Tetap gunakan fallback 'User' jika error
+      }
+
+      // ✅ PERBAIKAN 2: UPLOAD MEDIA TERLEBIH DAHULU
       final imageUrls = <String>[];
       String? videoUrl;
 
+      if (imagePaths.isNotEmpty) {
+        try {
+          // Upload gambar menggunakan repository
+          final repository = PostRepositoryImpl(FirebaseFirestore.instance);
+          imageUrls.addAll(
+              await repository.uploadPostImages(imagePaths, currentUser.uid)
+          );
+        } catch (e) {
+          throw Exception('Gagal upload gambar: $e');
+        }
+      }
+
+      if (videoPath != null) {
+        try {
+          final repository = PostRepositoryImpl(FirebaseFirestore.instance);
+          videoUrl = await repository.uploadPostVideo(videoPath, currentUser.uid);
+        } catch (e) {
+          throw Exception('Gagal upload video: $e');
+        }
+      }
+
+      // ✅ PERBAIKAN 3: STRUKTUR DATA YANG BENAR
       final postData = {
         'title': title,
         'description': description,
@@ -199,33 +241,37 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
         'locationCity': locationCity ?? '',
         'locationLat': locationLat,
         'locationLng': locationLng,
-        'imageUrls': imageUrls,
-        'videoUrl': videoUrl,
+        'imageUrls': imageUrls, // ✅ SUDAH ADA URL DARI UPLOAD
+        'videoUrl': videoUrl,   // ✅ SUDAH ADA URL DARI UPLOAD
         'condition': condition.name,
         'brand': brand ?? '',
         'size': size ?? '',
-        'weight': weight != null ? double.tryParse(weight) : null,
+        'weight': weight ?? '', // ✅ SIMPAN SEBAGAI STRING
         'additionalNotes': additionalNotes ?? '',
         'syarat': syarat ?? '',
         'maxOffers': maxOffers,
         'deadline': deadline,
         'userId': currentUser.uid,
-        'username': currentUser.displayName ?? 'User',
+        'username': username, // ✅ USERNAME YANG BENAR
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'likesCount': 0,
         'commentsCount': 0,
-        'currentOffers': 0,
+        'currentOffers': type == PostType.request ? 0 : null,
         'likedBy': [],
+        'isActive': true, // ✅ TAMBAHKAN FIELD INI
       };
 
+      // ✅ SIMPAN KE FIRESTORE
       await FirebaseFirestore.instance
           .collection('posts')
           .add(postData);
 
       state = const AsyncValue.data(null);
     } catch (e, stack) {
+      print('Error in createPost: $e');
       state = AsyncValue.error(e, stack);
     }
   }
 }
+
