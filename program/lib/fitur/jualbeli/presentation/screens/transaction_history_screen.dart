@@ -1,9 +1,11 @@
-// File: transaction_history_screen.dart - PERBAIKAN LENGKAP
+// File: transaction_history_screen.dart - PERBAIKAN DENGAN CEK RETUR
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
+import 'package:program/fitur/jualbeli/presentation/providers/return_request_provider.dart'; // ✅ TAMBAHAN
+import 'package:program/fitur/jualbeli/domain/entities/return_request_entity.dart'; // ✅ TAMBAHAN
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../../../jualbeli/domain/entities/transaction_entity.dart';
@@ -151,14 +153,14 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB DIPROSES (PENDING + PAID)
+  // ✅ TAB DIPROSES (PENDING + PAID + DELIVERED DENGAN RETUR AKTIF)
   Widget _buildProcessingTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
     return _buildTransactionList(
       transactionsAsync: transactionsAsync,
       filter: (transactions) => transactions.where((t) =>
-      t.status == TransactionStatus.pending ||
+          t.status == TransactionStatus.pending ||
           t.status == TransactionStatus.paid
       ).toList(),
       emptyMessage: 'Tidak ada transaksi yang sedang diproses.',
@@ -315,7 +317,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
   }
 }
 
-// ✅ CARD UNTUK MENAMPILKAN TRANSACTION HISTORY DENGAN STATUS COMPLETED
+// ✅ CARD UNTUK MENAMPILKAN TRANSACTION HISTORY DENGAN CEK RETUR
 class _TransactionHistoryCard extends ConsumerWidget {
   final Transaction transaction;
 
@@ -330,6 +332,9 @@ class _TransactionHistoryCard extends ConsumerWidget {
     ).format(transaction.amount);
 
     final sellerNameAsync = ref.watch(userNameProvider(transaction.sellerId));
+    
+    // ✅ CEK APAKAH ADA RETURN REQUEST YANG AKTIF
+    final returnRequestsAsync = ref.watch(returnRequestsByTransactionIdStreamProvider(transaction.id));
 
     // ✅ STATUS COLOR MAPPING DENGAN COMPLETED
     Color getStatusColor(TransactionStatus status) {
@@ -351,8 +356,12 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS TEXT MAPPING DENGAN COMPLETED
-    String getStatusText(TransactionStatus status) {
+    // ✅ STATUS TEXT MAPPING DENGAN COMPLETED DAN RETUR
+    String getStatusText(TransactionStatus status, bool hasActiveReturn) {
+      if (hasActiveReturn && status == TransactionStatus.delivered) {
+        return 'Diproses Retur'; // ✅ OVERRIDE UNTUK RETUR AKTIF
+      }
+      
       switch (status) {
         case TransactionStatus.pending:
           return 'Menunggu Konfirmasi';
@@ -362,7 +371,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
           return 'Sedang Dikirim';
         case TransactionStatus.delivered:
           return 'Diterima';
-        case TransactionStatus.completed: // ✅ TAMBAHAN
+        case TransactionStatus.completed:
           return 'Selesai';
         case TransactionStatus.refunded:
           return 'Dibatalkan';
@@ -371,8 +380,12 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS ICON MAPPING DENGAN COMPLETED
-    IconData getStatusIcon(TransactionStatus status) {
+    // ✅ STATUS ICON MAPPING DENGAN COMPLETED DAN RETUR
+    IconData getStatusIcon(TransactionStatus status, bool hasActiveReturn) {
+      if (hasActiveReturn && status == TransactionStatus.delivered) {
+        return Icons.assignment_return; // ✅ ICON RETUR
+      }
+      
       switch (status) {
         case TransactionStatus.pending:
           return Icons.hourglass_empty;
@@ -382,7 +395,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
           return Icons.local_shipping;
         case TransactionStatus.delivered:
           return Icons.check_circle;
-        case TransactionStatus.completed: // ✅ TAMBAHAN
+        case TransactionStatus.completed:
           return Icons.star;
         case TransactionStatus.refunded:
           return Icons.cancel;
@@ -391,262 +404,326 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    return GestureDetector(
-      onTap: () {
-        GoRouter.of(context).push('/transaction-detail/${transaction.id}');
-      },
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ✅ HEADER ROW
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return returnRequestsAsync.when(
+      data: (returnRequests) {
+        // ✅ CEK APAKAH ADA RETURN REQUEST YANG SEDANG AKTIF
+        final hasActiveReturn = returnRequests.any((r) => 
+            r.status == ReturnStatus.pending ||
+            r.status == ReturnStatus.approved ||
+            r.status == ReturnStatus.awaitingSellerResponse ||
+            r.status == ReturnStatus.sellerResponded
+        );
+
+        // ✅ WARNA STATUS BERUBAH JIKA ADA RETUR AKTIF
+        final displayStatusColor = hasActiveReturn && transaction.status == TransactionStatus.delivered 
+            ? Colors.orange 
+            : getStatusColor(transaction.status);
+
+        return GestureDetector(
+          onTap: () {
+            GoRouter.of(context).push('/transaction-detail/${transaction.id}');
+          },
+          child: Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'ID: ${transaction.id.substring(0, 8)}...',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                  // ✅ HEADER ROW
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'ID: ${transaction.id.substring(0, 8)}...',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: displayStatusColor.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              getStatusIcon(transaction.status, hasActiveReturn),
+                              size: 14,
+                              color: displayStatusColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              getStatusText(transaction.status, hasActiveReturn),
+                              style: TextStyle(
+                                color: displayStatusColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ✅ SELLER INFO
+                  sellerNameAsync.when(
+                    data: (name) => Row(
+                      children: [
+                        const Icon(Icons.store, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text('Jastiper: ${name ?? 'Unknown'}'),
+                      ],
+                    ),
+                    loading: () => const Row(
+                      children: [
+                        Icon(Icons.store, size: 16, color: Colors.grey),
+                        SizedBox(width: 4),
+                        Text('Memuat...'),
+                      ],
+                    ),
+                    error: (err, stack) => Row(
+                      children: [
+                        const Icon(Icons.store, size: 16, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text('Jastiper: ${transaction.sellerId.substring(0, 8)}...'),
+                      ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: getStatusColor(transaction.status).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          getStatusIcon(transaction.status),
-                          size: 14,
-                          color: getStatusColor(transaction.status),
+
+                  const SizedBox(height: 8),
+
+                  // ✅ AMOUNT
+                  Row(
+                    children: [
+                      const Icon(Icons.attach_money, size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Total: $formattedPrice',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
                         ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // ✅ DATE
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd MMM yyyy, HH:mm').format(
+                            transaction.createdAt.toDate()
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // ✅ SHOW BUYER ADDRESS IF EXISTS
+                  if (transaction.buyerAddress != null && transaction.buyerAddress!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.location_on, size: 16, color: Colors.grey),
                         const SizedBox(width: 4),
-                        Text(
-                          getStatusText(transaction.status),
-                          style: TextStyle(
-                            color: getStatusColor(transaction.status),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: Text(
+                            'Alamat: ${transaction.buyerAddress}',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // ✅ SELLER INFO
-              sellerNameAsync.when(
-                data: (name) => Row(
-                  children: [
-                    const Icon(Icons.store, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text('Jastiper: $name'),
                   ],
-                ),
-                loading: () => const Row(
-                  children: [
-                    Icon(Icons.store, size: 16, color: Colors.grey),
-                    SizedBox(width: 4),
-                    Text('Memuat...'),
-                  ],
-                ),
-                error: (err, stack) => Row(
-                  children: [
-                    const Icon(Icons.store, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text('Jastiper: ${transaction.sellerId.substring(0, 8)}...'),
-                  ],
-                ),
-              ),
 
-              const SizedBox(height: 8),
-
-              // ✅ AMOUNT
-              Row(
-                children: [
-                  const Icon(Icons.attach_money, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Total: $formattedPrice',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 8),
-
-              // ✅ DATE
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    DateFormat('dd MMM yyyy, HH:mm').format(
-                        transaction.createdAt.toDate()
-                    ),
-                  ),
-                ],
-              ),
-
-              // ✅ SHOW BUYER ADDRESS IF EXISTS
-              if (transaction.buyerAddress != null && transaction.buyerAddress!.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.location_on, size: 16, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        'Alamat: ${transaction.buyerAddress}',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  // ✅ SHOW RETURN NOTICE IF ACTIVE
+                  if (hasActiveReturn) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-
-              // ✅ SHOW RATING IF COMPLETED
-              if (transaction.status == TransactionStatus.completed && transaction.rating != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.teal.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.teal.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.star, size: 16, color: Colors.teal),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Rating: ${transaction.rating}/5',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // ✅ SHOW CANCELLATION REASON IF CANCELLED
-              if (transaction.status == TransactionStatus.refunded &&
-                  transaction.rejectionReason != null) ...[
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline, size: 16, color: Colors.red),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Alasan dibatalkan: ${transaction.rejectionReason}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.red,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                          SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Retur sedang diproses. Tombol aksi tidak tersedia.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // ✅ ACTION BUTTONS BERDASARKAN STATUS
-              if (transaction.status == TransactionStatus.shipped) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _markAsDelivered(ref, transaction.id, context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
                     ),
-                    icon: const Icon(Icons.check_circle_outline, size: 18),
-                    label: const Text('Konfirmasi Diterima'),
-                  ),
-                ),
-              ],
+                  ],
 
-
-              if (transaction.status == TransactionStatus.delivered) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    // Tombol Retur
-                    Expanded(
-                      flex: 1,
-                      child: OutlinedButton.icon(
-                        onPressed: () => _navigateToCreateReturnRequest(context, transaction.id),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red, width: 1.5),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                  // ✅ SHOW RATING IF COMPLETED
+                  if (transaction.status == TransactionStatus.completed && transaction.rating != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.teal.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.star, size: 16, color: Colors.teal),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Rating: ${transaction.rating}/5',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.teal,
+                            ),
                           ),
-                        ),
-                        icon: const Icon(Icons.assignment_return, size: 18),
-                        label: const Text('Retur', style: TextStyle(fontWeight: FontWeight.w600)),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    // Tombol Selesaikan
-                    Expanded(
-                      flex: 2,
+                  ],
+
+                  // ✅ SHOW CANCELLATION REASON IF CANCELLED
+                  if (transaction.status == TransactionStatus.refunded &&
+                      transaction.rejectionReason != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.info_outline, size: 16, color: Colors.red),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Alasan dibatalkan: ${transaction.rejectionReason}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // ✅ ACTION BUTTONS BERDASARKAN STATUS
+                  if (transaction.status == TransactionStatus.shipped) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () => _showCompleteTransactionDialog(ref, transaction.id, context),
+                        onPressed: () => _markAsDelivered(ref, transaction.id, context),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
+                          backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
                         ),
-                        icon: const Icon(Icons.star_outline, size: 18),
-                        label: const Text('Selesaikan', style: TextStyle(fontWeight: FontWeight.w600)),
+                        icon: const Icon(Icons.check_circle_outline, size: 18),
+                        label: const Text('Konfirmasi Diterima'),
                       ),
                     ),
                   ],
-                ),
-              ],
 
-            ],
+                  // ✅ TOMBOL SELESAI DAN RETUR UNTUK STATUS DELIVERED (HANYA JIKA TIDAK ADA RETUR AKTIF)
+                  if (transaction.status == TransactionStatus.delivered && !hasActiveReturn) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        // TOMBOL SELESAIKAN TRANSAKSI
+                        Expanded(
+                          flex: 3,
+                          child: ElevatedButton.icon(
+                            onPressed: () => _showCompleteTransactionDialog(ref, transaction.id, context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              foregroundColor: Colors.white,
+                            ),
+                            icon: const Icon(Icons.star_outline, size: 18),
+                            label: const Text('Selesaikan'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // TOMBOL RETUR
+                        Expanded(
+                          flex: 2,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _navigateToCreateReturnRequest(context, transaction.id),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                            ),
+                            icon: const Icon(Icons.assignment_return, size: 18),
+                            label: const Text('Retur'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
+        );
+      },
+      loading: () => _buildCardSkeleton(),
+      error: (error, stack) => _buildCardSkeleton(), // Fallback jika error
+    );
+  }
+
+  // ✅ SKELETON CARD UNTUK LOADING STATE
+  Widget _buildCardSkeleton() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 20,
+              width: double.infinity,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: 16,
+              width: 150,
+              color: Colors.grey[300],
+            ),
+          ],
         ),
       ),
     );
   }
 
   void _navigateToCreateReturnRequest(BuildContext context, String transactionId) {
-    // Pastikan transactionId tidak null
     if (transactionId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -657,11 +734,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
       return;
     }
 
-    print('Navigating to return request with transactionId: $transactionId'); // Debug
     GoRouter.of(context).push('/create-return-request/$transactionId');
   }
-
-
 
   // ✅ MARK AS DELIVERED
   void _markAsDelivered(WidgetRef ref, String transactionId, BuildContext context) {
@@ -688,8 +762,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
       ),
     );
   }
-
-
 
   // ✅ COMPLETE TRANSACTION DIALOG DENGAN RATING
   void _showCompleteTransactionDialog(WidgetRef ref, String transactionId, BuildContext context) {
