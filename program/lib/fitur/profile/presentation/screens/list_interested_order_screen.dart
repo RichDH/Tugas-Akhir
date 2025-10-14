@@ -303,7 +303,7 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
                 _buildItemsList(data['items'] as List),
               ],
 
-              // ✅ ACTION BUTTONS BERDASARKAN STATUS
+              // ✅ ACTION BUTTONS BERDASARKAN STATUS TRANSAKSI
               const SizedBox(height: 16),
               _buildActionButtons(transactionId, status, data),
             ],
@@ -346,27 +346,17 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
         );
 
       case 'paid':
-        return Container(
+      // ✅ TOMBOL MARK AS SHIPPED UNTUK STATUS PAID
+        return SizedBox(
           width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.blue.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.blue.withOpacity(0.3)),
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.schedule, color: Colors.blue, size: 18),
-              SizedBox(width: 8),
-              Text(
-                'Siapkan barang untuk dikirim',
-                style: TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          child: ElevatedButton.icon(
+            onPressed: () => _showMarkAsShippedDialog(transactionId),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.local_shipping, size: 18),
+            label: const Text('Tandai Sudah Dikirim'),
           ),
         );
 
@@ -486,6 +476,55 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
     }
   }
 
+  // ✅ DIALOG MARK AS SHIPPED UNTUK PENJUAL
+  void _showMarkAsShippedDialog(String transactionId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.local_shipping, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Konfirmasi Pengiriman'),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Apakah barang sudah dikirim?'),
+            SizedBox(height: 12),
+            Text(
+              '📦 Pastikan barang sudah benar-benar dikirim sebelum menandai status ini.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _markAsShipped(transactionId);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text(
+              'Ya, Sudah Dikirim',
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ✅ DIALOG MARK AS DELIVERED UNTUK PENJUAL
   void _showMarkAsDeliveredDialog(String transactionId) {
     showDialog(
@@ -535,6 +574,50 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
     );
   }
 
+  // ✅ MARK AS SHIPPED FUNCTION
+  Future<void> _markAsShipped(String transactionId) async {
+    try {
+      // Show loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Mengupdate status...'),
+            ],
+          ),
+        ),
+      );
+
+      // Call provider to mark as shipped
+      await ref.read(transactionProvider.notifier).markAsShipped(transactionId);
+
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Show success dialog
+      if (mounted) _showSuccessDialog('Berhasil menandai pesanan sebagai dikirim!');
+
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.pop(context);
+
+      // Show error
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   // ✅ MARK AS DELIVERED FUNCTION
   Future<void> _markAsDelivered(String transactionId) async {
     try {
@@ -558,22 +641,24 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
       await ref.read(transactionProvider.notifier).markAsDelivered(transactionId);
 
       // Close loading dialog
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
 
       // Show success dialog
-      _showSuccessDialog('Berhasil menandai pesanan sebagai diterima!');
+      if (mounted) _showSuccessDialog('Berhasil menandai pesanan sebagai diterima!');
 
     } catch (e) {
       // Close loading dialog
-      Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
 
       // Show error
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

@@ -27,7 +27,7 @@ class ReturnReviewScreen extends ConsumerWidget {
               Navigator.pop(context);
             } else {
               // Fallback jika tidak bisa pop
-              context.go('/admin/dashboard'); // Sesuaikan dengan route admin
+              context.go('/admin/'); // Sesuaikan dengan route admin
             }
           },
         ),
