@@ -663,29 +663,82 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
   }
 
   // ✅ DIALOG ACCEPT ORDER
-  void _showAcceptDialog(String transactionId) {
+  void _showAcceptDialog(String transactionId) async {
+    // Ambil transaksi untuk dapat sellerId dan jumlah escrow
+    final txnDoc = await FirebaseFirestore.instance.collection('transactions').doc(transactionId).get();
+    final txn = txnDoc.data() ?? {};
+    final sellerId = txn['sellerId'] as String? ?? currentUser!.uid;
+    final escrowAmount = (txn['escrowAmount'] as num?)?.toDouble();
+    final amount = (txn['amount'] as num?)?.toDouble() ?? 0.0;
+    final toRelease = escrowAmount ?? amount;
+
+    final verified = await _isSellerVerified(sellerId);
+
+    if (!mounted) return;
+
+    if (verified) {
+      // Seller belum terverifikasi → langsung ke accepted (paid) seperti biasa
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Terima Pesanan'),
+          content: const Text('Akun Anda belum terverifikasi. Pesanan akan ditandai dibayar tanpa pencairan awal.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await _acceptOrder(transactionId);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: const Text('Terima', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // Seller terverifikasi → tawarkan pencairan awal
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Terima Pesanan'),
-        content: const Text('Apakah Anda yakin ingin menerima pesanan ini?'),
+        title: const Text('Terima Pesanan & Cairkan Dana?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Anda terverifikasi. Anda bisa mencairkan dana sekarang sejumlah ${_formatCurrency(toRelease)}.'),
+            const SizedBox(height: 8),
+            const Text('Setelah dana dicairkan, status transaksi akan menjadi Dibayar (paid).'),
+          ],
+        ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
+          // Terima tanpa cairkan
+          OutlinedButton.icon(
             onPressed: () async {
               Navigator.pop(context);
               await _acceptOrder(transactionId);
             },
+            icon: const Icon(Icons.check),
+            label: const Text('Terima tanpa cairkan'),
+          ),
+          // Cairkan lalu terima
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.pop(context);
+              // proses pencairan + set paid
+              await _acceptAndPayout(transactionId: transactionId, sellerId: sellerId, amountToRelease: toRelease);
+            },
+            icon: const Icon(Icons.account_balance_wallet),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Terima', style: TextStyle(color: Colors.white)),
+            label: const Text('Cairkan & Terima', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
+
 
   // ✅ DIALOG REJECT ORDER
   void _showRejectDialog(String transactionId) {
@@ -750,6 +803,98 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
       );
     }
   }
+
+  Future<void> _acceptAndPayout({
+    required String transactionId,
+    required String sellerId,
+    required double amountToRelease,
+  }) async {
+    try {
+      // Loading
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Memproses pencairan...'),
+            ],
+          ),
+        ),
+      );
+
+      // 1) Cairkan dana ke seller
+      await _releaseFundsToSeller(
+        sellerId: sellerId,
+        transactionId: transactionId,
+        amount: amountToRelease,
+      );
+
+      // 2) Set transaksi menjadi paid + accepted flag
+      await FirebaseFirestore.instance.collection('transactions').doc(transactionId).update({
+        'status': 'paid',
+        'isAcceptedBySeller': true,
+        'isEscrow' : false,
+        'acceptedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) Navigator.pop(context); // tutup loading
+      if (mounted) _showSuccessDialog('Dana berhasil dicairkan dan pesanan ditandai dibayar!');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal mencairkan dana: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+
+  Future<bool> _isSellerVerified(String sellerId) async {
+    final doc = await FirebaseFirestore.instance.collection('users').doc(sellerId).get();
+    return (doc.data()?['verificationStatus'] ?? 'verified') == false;
+  }
+
+  Future<void> _releaseFundsToSeller({
+    required String sellerId,
+    required String transactionId,
+    required double amount,
+  }) async {
+    final batch = FirebaseFirestore.instance.batch();
+    final usersRef = FirebaseFirestore.instance.collection('users').doc(sellerId);
+    final txnRef = FirebaseFirestore.instance.collection('transactions').doc(transactionId);
+    final payoutLogRef = FirebaseFirestore.instance.collection('payout_logs').doc();
+
+    // 1) Tambah saldo seller
+    batch.update(usersRef, {
+      'saldo': FieldValue.increment(amount),
+    });
+
+    // 2) Catat log pencairan
+    batch.set(payoutLogRef, {
+      'transactionId': transactionId,
+      'sellerId': sellerId,
+      'amount': amount,
+      'approvedBy': 'seller_verified_auto', // atau admin uid bila ada persetujuan admin
+      'createdAt': FieldValue.serverTimestamp(),
+      'status': 'released',
+      'note': 'Verified seller early payout',
+    });
+
+    // 3) Tandai di transaksi bahwa telah dicairkan ke seller saat accepted
+    batch.update(txnRef, {
+      'releasedEarly': true,
+      'releasedEarlyAt': FieldValue.serverTimestamp(),
+      'releasedEarlyAmount': amount,
+    });
+
+    await batch.commit();
+  }
+
 
   // ✅ REJECT ORDER FUNCTION
   Future<void> _rejectOrder(String transactionId, String reason) async {

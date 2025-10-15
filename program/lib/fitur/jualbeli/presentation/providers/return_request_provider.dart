@@ -340,7 +340,7 @@ final respondedReturnRequestsStreamProvider = StreamProvider<List<ReturnRequest>
   return notifier.getRespondedReturnRequests();
 });
 
-final returnRequestsByTransactionIdStreamProvider = StreamProvider.family<List<ReturnRequest>, String>((ref, transactionId) {
+final returnRequestsByTransactionIdStreamProvider = StreamProvider.autoDispose.family<List<ReturnRequest>, String>((ref, transactionId) {
   final notifier = ref.watch(returnRequestProvider.notifier);
   return notifier.getReturnRequestsByTransactionId(transactionId);
 });

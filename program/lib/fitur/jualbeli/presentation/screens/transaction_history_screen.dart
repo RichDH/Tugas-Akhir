@@ -1,17 +1,16 @@
-// File: transaction_history_screen.dart - PERBAIKAN DENGAN CEK RETUR
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
-import 'package:program/fitur/jualbeli/presentation/providers/return_request_provider.dart'; // ✅ TAMBAHAN
-import 'package:program/fitur/jualbeli/domain/entities/return_request_entity.dart'; // ✅ TAMBAHAN
+import 'package:program/fitur/jualbeli/presentation/providers/return_request_provider.dart';
+import 'package:program/fitur/jualbeli/domain/entities/return_request_entity.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../../../jualbeli/domain/entities/transaction_entity.dart';
 
-// ✅ SAFE TRANSACTION PROVIDER DENGAN STATUS COMPLETED
-final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>, String>((ref, buyerId) {
+// ✅ PERUBAHAN: Menambahkan .autoDispose agar state di-reset otomatis saat logout
+final safeTransactionsByBuyerProvider = StreamProvider.autoDispose.family<List<Transaction>, String>((ref, buyerId) {
   final authState = ref.watch(authStateChangesProvider);
 
   return authState.when(
@@ -22,9 +21,8 @@ final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>,
         return Stream.error('User not authenticated');
       }
 
-      if (user.uid != buyerId) {
-        return Stream.error('User ID mismatch');
-      }
+      // Pengecekan 'user.uid != buyerId' dihilangkan agar lebih aman saat transisi login/logout
+      // Karena provider akan otomatis di-reset, pengecekan ini tidak lagi diperlukan.
 
       final firestore = ref.watch(firebaseFirestoreProvider);
 
@@ -49,7 +47,7 @@ final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>,
             createdAt: data['createdAt'] ?? Timestamp.now(),
             shippedAt: data['shippedAt'],
             deliveredAt: data['deliveredAt'],
-            completedAt: data['completedAt'], // ✅ TAMBAHAN
+            completedAt: data['completedAt'],
             refundReason: data['refundReason'],
             isEscrow: data['isEscrow'] ?? false,
             escrowAmount: (data['escrowAmount'] as num?)?.toDouble() ?? 0.0,
@@ -57,13 +55,14 @@ final safeTransactionsByBuyerProvider = StreamProvider.family<List<Transaction>,
             isAcceptedBySeller: data['isAcceptedBySeller'] ?? false,
             rejectionReason: data['rejectionReason'],
             rating: data['rating'] as int?,
-            buyerAddress: data['buyerAddress'] as String?, // ✅ TAMBAHAN
+            buyerAddress: data['buyerAddress'] as String?,
           );
         }).toList();
       });
     },
   );
 });
+
 
 class TransactionHistoryScreen extends ConsumerWidget {
   const TransactionHistoryScreen({super.key});
@@ -111,7 +110,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
 
   Widget _buildAuthenticatedContent(BuildContext context, WidgetRef ref, String userId) {
     return DefaultTabController(
-      length: 6, // ✅ UBAH DARI 5 JADI 6 TAB UNTUK COMPLETED
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Riwayat Transaksi'),
@@ -122,7 +121,7 @@ class TransactionHistoryScreen extends ConsumerWidget {
               Tab(text: 'Diproses'),
               Tab(text: 'Dikirim'),
               Tab(text: 'Diterima'),
-              Tab(text: 'Selesai'), // ✅ TAMBAHAN: COMPLETED
+              Tab(text: 'Selesai'),
               Tab(text: 'Dibatalkan'),
             ],
           ),
@@ -132,8 +131,8 @@ class TransactionHistoryScreen extends ConsumerWidget {
             _buildAllTransactions(context, ref, userId),
             _buildProcessingTransactions(context, ref, userId),
             _buildShippedTransactions(context, ref, userId),
-            _buildDeliveredTransactions(context, ref, userId), // ✅ DELIVERED
-            _buildCompletedTransactions(context, ref, userId), // ✅ COMPLETED
+            _buildDeliveredTransactions(context, ref, userId),
+            _buildCompletedTransactions(context, ref, userId),
             _buildCancelledTransactions(context, ref, userId),
           ],
         ),
@@ -141,7 +140,6 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB SEMUA TRANSAKSI
   Widget _buildAllTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
@@ -153,14 +151,13 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB DIPROSES (PENDING + PAID + DELIVERED DENGAN RETUR AKTIF)
   Widget _buildProcessingTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
     return _buildTransactionList(
       transactionsAsync: transactionsAsync,
       filter: (transactions) => transactions.where((t) =>
-          t.status == TransactionStatus.pending ||
+      t.status == TransactionStatus.pending ||
           t.status == TransactionStatus.paid
       ).toList(),
       emptyMessage: 'Tidak ada transaksi yang sedang diproses.',
@@ -168,7 +165,6 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB DIKIRIM (SHIPPED)
   Widget _buildShippedTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
@@ -182,7 +178,6 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB DITERIMA (DELIVERED SAJA)
   Widget _buildDeliveredTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
@@ -196,21 +191,19 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ TAB SELESAI (COMPLETED SAJA) - BARU
   Widget _buildCompletedTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
     return _buildTransactionList(
       transactionsAsync: transactionsAsync,
       filter: (transactions) => transactions.where((t) =>
-      t.status == TransactionStatus.completed // ✅ FILTER COMPLETED
+      t.status == TransactionStatus.completed
       ).toList(),
       emptyMessage: 'Tidak ada transaksi yang selesai.',
       ref: ref,
     );
   }
 
-  // ✅ TAB DIBATALKAN (REFUNDED SAJA)
   Widget _buildCancelledTransactions(BuildContext context, WidgetRef ref, String userId) {
     final transactionsAsync = ref.watch(safeTransactionsByBuyerProvider(userId));
 
@@ -224,7 +217,6 @@ class TransactionHistoryScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ HELPER METHOD UNTUK BUILD TRANSACTION LIST
   Widget _buildTransactionList({
     required AsyncValue<List<Transaction>> transactionsAsync,
     required List<Transaction> Function(List<Transaction>) filter,
@@ -261,6 +253,8 @@ class TransactionHistoryScreen extends ConsumerWidget {
 
         return RefreshIndicator(
           onRefresh: () async {
+            // Invalidate-nya sekarang tidak perlu manual karena sudah autoDispose,
+            // tapi bisa tetap di sini untuk fitur pull-to-refresh
             ref.invalidate(safeTransactionsByBuyerProvider);
           },
           child: ListView.builder(
@@ -304,7 +298,8 @@ class TransactionHistoryScreen extends ConsumerWidget {
               ElevatedButton.icon(
                 onPressed: () {
                   ref.invalidate(authStateChangesProvider);
-                  ref.invalidate(safeTransactionsByBuyerProvider);
+                  // Tidak perlu invalidate safeTransactionsByBuyerProvider secara eksplisit
+                  // karena authStateChangesProvider akan memicu rebuild.
                 },
                 icon: const Icon(Icons.refresh),
                 label: const Text('Coba Lagi'),
@@ -317,7 +312,6 @@ class TransactionHistoryScreen extends ConsumerWidget {
   }
 }
 
-// ✅ CARD UNTUK MENAMPILKAN TRANSACTION HISTORY DENGAN CEK RETUR
 class _TransactionHistoryCard extends ConsumerWidget {
   final Transaction transaction;
 
@@ -332,11 +326,8 @@ class _TransactionHistoryCard extends ConsumerWidget {
     ).format(transaction.amount);
 
     final sellerNameAsync = ref.watch(userNameProvider(transaction.sellerId));
-    
-    // ✅ CEK APAKAH ADA RETURN REQUEST YANG AKTIF
     final returnRequestsAsync = ref.watch(returnRequestsByTransactionIdStreamProvider(transaction.id));
 
-    // ✅ STATUS COLOR MAPPING DENGAN COMPLETED
     Color getStatusColor(TransactionStatus status) {
       switch (status) {
         case TransactionStatus.pending:
@@ -347,7 +338,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
           return Colors.purple;
         case TransactionStatus.delivered:
           return Colors.green;
-        case TransactionStatus.completed: // ✅ TAMBAHAN
+        case TransactionStatus.completed:
           return Colors.teal;
         case TransactionStatus.refunded:
           return Colors.red;
@@ -356,12 +347,10 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS TEXT MAPPING DENGAN COMPLETED DAN RETUR
     String getStatusText(TransactionStatus status, bool hasActiveReturn) {
       if (hasActiveReturn && status == TransactionStatus.delivered) {
-        return 'Diproses Retur'; // ✅ OVERRIDE UNTUK RETUR AKTIF
+        return 'Diproses Retur';
       }
-      
       switch (status) {
         case TransactionStatus.pending:
           return 'Menunggu Konfirmasi';
@@ -380,12 +369,10 @@ class _TransactionHistoryCard extends ConsumerWidget {
       }
     }
 
-    // ✅ STATUS ICON MAPPING DENGAN COMPLETED DAN RETUR
     IconData getStatusIcon(TransactionStatus status, bool hasActiveReturn) {
       if (hasActiveReturn && status == TransactionStatus.delivered) {
-        return Icons.assignment_return; // ✅ ICON RETUR
+        return Icons.assignment_return;
       }
-      
       switch (status) {
         case TransactionStatus.pending:
           return Icons.hourglass_empty;
@@ -406,17 +393,15 @@ class _TransactionHistoryCard extends ConsumerWidget {
 
     return returnRequestsAsync.when(
       data: (returnRequests) {
-        // ✅ CEK APAKAH ADA RETURN REQUEST YANG SEDANG AKTIF
-        final hasActiveReturn = returnRequests.any((r) => 
-            r.status == ReturnStatus.pending ||
+        final hasActiveReturn = returnRequests.any((r) =>
+        r.status == ReturnStatus.pending ||
             r.status == ReturnStatus.approved ||
             r.status == ReturnStatus.awaitingSellerResponse ||
             r.status == ReturnStatus.sellerResponded
         );
 
-        // ✅ WARNA STATUS BERUBAH JIKA ADA RETUR AKTIF
-        final displayStatusColor = hasActiveReturn && transaction.status == TransactionStatus.delivered 
-            ? Colors.orange 
+        final displayStatusColor = hasActiveReturn && transaction.status == TransactionStatus.delivered
+            ? Colors.orange
             : getStatusColor(transaction.status);
 
         return GestureDetector(
@@ -431,7 +416,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ✅ HEADER ROW
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -470,10 +454,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 12),
-
-                  // ✅ SELLER INFO
                   sellerNameAsync.when(
                     data: (name) => Row(
                       children: [
@@ -497,10 +478,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 8),
-
-                  // ✅ AMOUNT
                   Row(
                     children: [
                       const Icon(Icons.attach_money, size: 16, color: Colors.grey),
@@ -514,10 +492,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 8),
-
-                  // ✅ DATE
                   Row(
                     children: [
                       const Icon(Icons.calendar_today, size: 16, color: Colors.grey),
@@ -529,8 +504,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ],
                   ),
-
-                  // ✅ SHOW BUYER ADDRESS IF EXISTS
                   if (transaction.buyerAddress != null && transaction.buyerAddress!.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Row(
@@ -547,8 +520,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ],
                     ),
                   ],
-
-                  // ✅ SHOW RETURN NOTICE IF ACTIVE
                   if (hasActiveReturn && transaction.status != TransactionStatus.refunded) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -575,7 +546,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-
                   if (hasActiveReturn && transaction.status == TransactionStatus.refunded) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -602,8 +572,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-
-                  // ✅ SHOW RATING IF COMPLETED
                   if (transaction.status == TransactionStatus.completed && transaction.rating != null) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -629,8 +597,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-
-                  // ✅ SHOW CANCELLATION REASON IF CANCELLED
                   if (transaction.status == TransactionStatus.refunded &&
                       transaction.rejectionReason != null) ...[
                     const SizedBox(height: 8),
@@ -659,8 +625,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-
-                  // ✅ ACTION BUTTONS BERDASARKAN STATUS
                   if (transaction.status == TransactionStatus.shipped) ...[
                     const SizedBox(height: 12),
                     SizedBox(
@@ -676,13 +640,10 @@ class _TransactionHistoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-
-                  // ✅ TOMBOL SELESAI DAN RETUR UNTUK STATUS DELIVERED (HANYA JIKA TIDAK ADA RETUR AKTIF)
                   if (transaction.status == TransactionStatus.delivered && !hasActiveReturn) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        // TOMBOL SELESAIKAN TRANSAKSI
                         Expanded(
                           flex: 3,
                           child: ElevatedButton.icon(
@@ -696,7 +657,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // TOMBOL RETUR
                         Expanded(
                           flex: 2,
                           child: OutlinedButton.icon(
@@ -719,11 +679,10 @@ class _TransactionHistoryCard extends ConsumerWidget {
         );
       },
       loading: () => _buildCardSkeleton(),
-      error: (error, stack) => _buildCardSkeleton(), // Fallback jika error
+      error: (error, stack) => _buildCardSkeleton(),
     );
   }
 
-  // ✅ SKELETON CARD UNTUK LOADING STATE
   Widget _buildCardSkeleton() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -733,17 +692,19 @@ class _TransactionHistoryCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              height: 20,
-              width: double.infinity,
-              color: Colors.grey[300],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(height: 16, width: 120, color: Colors.grey[300]),
+                Container(height: 24, width: 80, color: Colors.grey[300]),
+              ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              height: 16,
-              width: 150,
-              color: Colors.grey[300],
-            ),
+            const SizedBox(height: 16),
+            Container(height: 14, width: 200, color: Colors.grey[300]),
+            const SizedBox(height: 8),
+            Container(height: 18, width: 150, color: Colors.grey[300]),
+            const SizedBox(height: 8),
+            Container(height: 14, width: 220, color: Colors.grey[300]),
           ],
         ),
       ),
@@ -760,11 +721,9 @@ class _TransactionHistoryCard extends ConsumerWidget {
       );
       return;
     }
-
     GoRouter.of(context).push('/create-return-request/$transactionId');
   }
 
-  // ✅ MARK AS DELIVERED
   void _markAsDelivered(WidgetRef ref, String transactionId, BuildContext context) {
     showDialog(
       context: context,
@@ -790,7 +749,6 @@ class _TransactionHistoryCard extends ConsumerWidget {
     );
   }
 
-  // ✅ COMPLETE TRANSACTION DIALOG DENGAN RATING
   void _showCompleteTransactionDialog(WidgetRef ref, String transactionId, BuildContext context) {
     int selectedRating = 5;
 

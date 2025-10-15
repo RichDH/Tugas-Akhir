@@ -117,9 +117,17 @@ class TransactionRepositoryImpl implements TransactionRepository {
     try {
       // Get transaction data first
       final transactionDoc = await _firestore.collection('transactions').doc(transactionId).get();
+
+      // Tambahkan pengecekan jika dokumen tidak ada untuk menghindari error
+      if (!transactionDoc.exists) {
+        throw Exception('Transaksi dengan ID $transactionId tidak ditemukan.');
+      }
+
       final transactionData = transactionDoc.data() as Map<String, dynamic>;
       final sellerId = transactionData['sellerId'] as String;
       final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
+      // Ambil nilai 'isEscrow'. '?? false' digunakan untuk keamanan jika field tidak ada.
+      final bool isEscrow = transactionData['isEscrow'] ?? false;
 
       // Update transaction to completed
       await _firestore.collection('transactions').doc(transactionId).update({
@@ -129,10 +137,13 @@ class TransactionRepositoryImpl implements TransactionRepository {
         'releaseToSellerAt': FieldValue.serverTimestamp(),
       });
 
-      // Release funds to seller - ADD TO SELLER'S BALANCE
-      await _firestore.collection('users').doc(sellerId).update({
-        'saldo': FieldValue.increment(escrowAmount),
-      });
+      // ✅ BAGIAN IF YANG DILENGKAPI
+      // Jalankan kode di bawahnya hanya jika nilai 'isEscrow' adalah true
+      if (isEscrow) {
+        await _firestore.collection('users').doc(sellerId).update({
+          'saldo': FieldValue.increment(escrowAmount),
+        });
+      }
 
     } catch (e) {
       throw Exception('Gagal menyelesaikan transaksi dan mencairkan dana: $e');
@@ -152,6 +163,7 @@ class TransactionRepositoryImpl implements TransactionRepository {
       throw Exception('Gagal konfirmasi penerimaan retur: $e');
     }
   }
+
 
   @override
   Future<void> releaseEscrowFunds(String transactionId) async {
