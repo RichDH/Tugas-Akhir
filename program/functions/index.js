@@ -45,48 +45,119 @@ app.post("/create-room", async (req, res) => {
   }
 });
 
-// ✅ CRON JOB: Auto-complete transaksi setiap 15 menit
-cron.schedule('*/15 * * * *', async () => {
-  console.log('[CRON] Menjalankan auto-complete transaksi...');
+// ✅ CRON JOB LENGKAP: Auto-complete dengan pencairan dana
+cron.schedule('* * * * *', async () => {
+  console.log('[CRON] Menjalankan auto-complete transaksi lengkap...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 200, now.nanoseconds);
+    const thresholdTime = new admin.firestore.Timestamp(now.seconds - 60, now.nanoseconds);
 
-    const transactions = await admin.firestore()
+    const toSeconds = (val) => {
+      if (!val) return null;
+      if (val.seconds) return val.seconds;
+      if (val.toDate) return Math.floor(val.toDate() / 1000);
+      if (val instanceof Date) return Math.floor(val.getTime() / 1000);
+      if (typeof val === 'number') return Math.floor(val / 1000);
+      return null;
+    };
+
+    const snap = await admin.firestore()
       .collection('transactions')
       .where('status', '==', 'delivered')
-      .where('completedAt', '==', null)
-      .where('deliveredAt', '<=', fifteenMinutesAgo)
+      .limit(200)
       .get();
 
-    const batch = admin.firestore().batch();
+    console.log(`[CRON] delivered count: ${snap.size}`);
+
     let count = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
 
-    transactions.docs.forEach((doc) => {
-      batch.update(doc.ref, {
-        completedAt: admin.firestore.FieldValue.serverTimestamp(),
-        rating: null, // Kosongkan rating
-      });
-      count++;
-    });
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const transactionId = doc.id;
 
-    if (count > 0) {
-      await batch.commit();
-      console.log(`[CRON] ${count} transaksi diselesaikan otomatis.`);
-    } else {
-      console.log('[CRON] Tidak ada transaksi yang perlu diselesaikan.');
+      const deliveredSec = toSeconds(data.deliveredAt);
+      const completedMissing = data.completedAt === null || data.completedAt === undefined;
+
+      if (deliveredSec !== null && completedMissing && deliveredSec <= thresholdTime.seconds) {
+        try {
+          // 1. Cek return request aktif
+          const activeReturns = await admin.firestore()
+            .collection('return_requests')
+            .where('transactionId', '==', transactionId)
+            .where('status', 'in', ['pending', 'awaitingSellerResponse', 'approved'])
+            .get();
+
+          if (!activeReturns.empty) {
+            skippedCount++;
+            console.log(`[CRON] Skip ${transactionId} - ada retur aktif`);
+            continue;
+          }
+
+          // 2. PROSES AUTO-COMPLETE LENGKAP (seperti completeTransaction)
+          const sellerId = data.sellerId;
+          const escrowAmount = data.escrowAmount ? parseFloat(data.escrowAmount) : 0;
+          const isEscrow = data.isEscrow === true; // boolean check
+
+          console.log(`[CRON] Processing ${transactionId}: sellerId=${sellerId}, escrowAmount=${escrowAmount}, isEscrow=${isEscrow}`);
+
+          // 3. Update transaction dengan semua field yang diperlukan
+          const transactionUpdateData = {
+            status: 'completed',
+            completedAt: admin.firestore.FieldValue.serverTimestamp(),
+            rating: null, // Auto-complete = no rating
+            releaseToSellerAt: admin.firestore.FieldValue.serverTimestamp(),
+            autoCompleted: true, // Flag untuk tracking
+            autoCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          // 4. Batch operation untuk atomicity
+          const batch = admin.firestore().batch();
+
+          // Update transaction
+          batch.update(doc.ref, transactionUpdateData);
+
+          // 5. PENCAIRAN DANA KE SELLER (jika isEscrow = true)
+          if (isEscrow && sellerId && escrowAmount > 0) {
+            const sellerRef = admin.firestore().collection('users').doc(sellerId);
+            batch.update(sellerRef, {
+              saldo: admin.firestore.FieldValue.increment(escrowAmount)
+            });
+            console.log(`[CRON] Mencairkan ${escrowAmount} ke seller ${sellerId}`);
+          } else {
+            console.log(`[CRON] Skip pencairan: isEscrow=${isEscrow}, escrowAmount=${escrowAmount}`);
+          }
+
+          // 6. Commit batch operation
+          await batch.commit();
+          count++;
+
+          console.log(`[CRON] ✅ Auto-completed: ${transactionId}`);
+
+        } catch (error) {
+          errorCount++;
+          console.error(`[CRON] ❌ Error processing ${transactionId}:`, error.message);
+          // Continue dengan transaksi lainnya
+        }
+      }
     }
+
+    // 7. Summary log
+    console.log(`[CRON] SUMMARY: ${count} completed, ${skippedCount} skipped (retur), ${errorCount} errors`);
+
   } catch (error) {
-    console.error('[CRON ERROR] Gagal auto-complete:', error);
+    console.error('[CRON ERROR] Gagal menjalankan auto-complete:', error);
   }
 });
+
 
 // ✅ CRON JOB: Auto-handle retur yang tidak direspon dalam 15 menit
 cron.schedule('*/15 * * * *', async () => {
   console.log('[CRON] Memeriksa retur yang belum direspon...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 200, now.nanoseconds);
 
     const returnRequests = await admin.firestore()
       .collection('return_requests')
@@ -103,7 +174,7 @@ cron.schedule('*/15 * * * *', async () => {
 
       // 1. Update status retur → finalRejected
       batch.update(doc.ref, {
-        status: 'final_rejected',
+        status: 'finalApproved',
         respondedAt: admin.firestore.FieldValue.serverTimestamp(),
         responseReason: 'Jastiper tidak merespon dalam 15 menit',
       });

@@ -158,16 +158,16 @@ class PostWidget extends ConsumerWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-        if (post.isActive ==true)
+        if (post.isActive == true)
           Text(
             'Aktif',
             style: TextStyle(
-              color: isExpired ? Colors.red : Colors.green,
+              color: !isExpired ? Colors.red : Colors.green,
               fontWeight: FontWeight.bold,
             ),
           ),
         Text('Penawaran: $currentOffers/$maxOffers'),
-        if (isExpired)
+        if (!isExpired)
           const Text(
             'EXPIRED',
             style: TextStyle(

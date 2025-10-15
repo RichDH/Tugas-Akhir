@@ -126,7 +126,6 @@ class TransactionRepositoryImpl implements TransactionRepository {
       final transactionData = transactionDoc.data() as Map<String, dynamic>;
       final sellerId = transactionData['sellerId'] as String;
       final escrowAmount = (transactionData['escrowAmount'] as num).toDouble();
-      // Ambil nilai 'isEscrow'. '?? false' digunakan untuk keamanan jika field tidak ada.
       final bool isEscrow = transactionData['isEscrow'] ?? false;
 
       // Update transaction to completed
@@ -137,8 +136,6 @@ class TransactionRepositoryImpl implements TransactionRepository {
         'releaseToSellerAt': FieldValue.serverTimestamp(),
       });
 
-      // ✅ BAGIAN IF YANG DILENGKAPI
-      // Jalankan kode di bawahnya hanya jika nilai 'isEscrow' adalah true
       if (isEscrow) {
         await _firestore.collection('users').doc(sellerId).update({
           'saldo': FieldValue.increment(escrowAmount),

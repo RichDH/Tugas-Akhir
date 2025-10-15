@@ -4,10 +4,14 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:program/app/providers/firebase_providers.dart';
 import '../../../cart/domain/entities/cart_item.dart';
 import '../../../cart/presentation/providers/cart_provider.dart';
+import '../../domain/entities/post.dart';
 import '../providers/post_provider.dart';
 import '../widgets/video_player_widgets.dart';
+import 'package:program/fitur/post/presentation/widgets/take_order_dialog.dart';
+import 'package:program/fitur/post/presentation/providers/offer_provider.dart';
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
@@ -206,10 +210,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   Widget _buildProductDetails(post) {
     String displayPrice;
     if (_getPostTypeText(post.type) == 'REQUEST') {
-      if (post.deadline != null) {
-        displayPrice = 'Deadline: ${DateFormat('dd/MM/yyyy HH:mm').format(post.deadline!.toDate())}';
+      if (post.isActive == true) {
+        displayPrice = 'Status: Aktif';
       } else {
-        displayPrice = 'Tidak ada deadline';
+        displayPrice = 'Status: Tidak aktif';
       }
     } else {
       displayPrice = post.price != null
@@ -340,9 +344,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     );
   }
 
-  // ✅ BOTTOM ACTION BUTTONS - DIPERBAIKI UNTUK REQUEST
   Widget _buildBottomActions(post) {
     final postType = _getPostTypeText(post.type);
+    final currentUserId = ref.read(firebaseAuthProvider).currentUser?.uid ?? '';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -384,77 +388,95 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ✅ ACTION BUTTONS BERBEDA UNTUK REQUEST DAN NON-REQUEST
-          if (postType == 'REQUEST')
-          // Tombol untuk REQUEST
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      // TODO: Implement buat penawaran
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fitur buat penawaran akan segera hadir'),
-                          backgroundColor: Colors.blue,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.local_offer),
-                    label: const Text('Buat Penawaran'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      // TODO: Implement ambil pesanan
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Fitur ambil pesanan akan segera hadir'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.shopping_bag),
-                    label: const Text('Ambil Pesanan'),
-                  ),
-                ),
-              ],
-            )
-          else
-          // Tombol untuk JASTIP/SHORT/SALE
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showQuantityDialog(context, post),
-                    icon: const Icon(Icons.shopping_cart_outlined),
-                    label: const Text('Keranjang'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showBuyDirectDialog(post),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.shopping_bag),
-                    label: const Text('Beli'),
-                  ),
-                ),
-              ],
-            ),
+          if (postType == 'REQUEST' && post.userId != currentUserId)
+            _buildRequestActionButtons(post, currentUserId)
+          else if (postType != 'REQUEST')
+            _buildRegularActionButtons(post),
         ],
       ),
     );
   }
+
+// ✅ WIDGET UNTUK REQUEST ACTION BUTTONS
+  Widget _buildRequestActionButtons(post, String currentUserId) {
+    // Cek apakah sudah mencapai maxOffers
+    final isOfferLimitReached = post.maxOffers != null &&
+        post.currentOffers >= post.maxOffers!;
+
+    if (isOfferLimitReached) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.amber.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.amber),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.info, color: Colors.amber),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Penawaran untuk request ini sudah penuh (${post.currentOffers}/${post.maxOffers})',
+                style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: () => _showTakeOrderDialog(post),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.add_task),
+            label: const Text('Ambil Pesanan'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegularActionButtons(post) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () => _showQuantityDialog(context, post),
+            icon: const Icon(Icons.shopping_cart_outlined),
+            label: const Text('Keranjang'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: () => _showBuyDirectDialog(post),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.shopping_bag),
+            label: const Text('Beli'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showTakeOrderDialog(post) {
+    showDialog(
+      context: context,
+      builder: (context) => TakeOrderDialog(post: post),
+    );
+  }
+
 
   // ✅ DIALOG QUANTITY UNTUK KERANJANG
   void _showQuantityDialog(BuildContext context, post) {
