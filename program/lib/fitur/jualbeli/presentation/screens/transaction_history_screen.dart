@@ -549,7 +549,7 @@ class _TransactionHistoryCard extends ConsumerWidget {
                   ],
 
                   // ✅ SHOW RETURN NOTICE IF ACTIVE
-                  if (hasActiveReturn) ...[
+                  if (hasActiveReturn && transaction.status != TransactionStatus.refunded) ...[
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.all(8),
@@ -565,6 +565,33 @@ class _TransactionHistoryCard extends ConsumerWidget {
                           Expanded(
                             child: Text(
                               'Retur sedang diproses. Tombol aksi tidak tersedia.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  if (hasActiveReturn && transaction.status == TransactionStatus.refunded) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                          SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Retur Berhasil disetujui.',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.orange,

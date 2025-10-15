@@ -1,12 +1,11 @@
-// File: lib/fitur/jualbeli/presentation/providers/return_request_provider.dart - FLOW DIPERBAIKI
-
+// File: return_request_provider.dart - PERBAIKAN LENGKAP DENGAN REFUND
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/data/repositories/return_request_repository_impl.dart';
 import 'package:program/fitur/jualbeli/domain/repositories/return_request_repository.dart';
 import 'package:program/fitur/jualbeli/domain/entities/return_request_entity.dart';
-import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart'; // ✅ TAMBAHAN
+import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:program/app/constants/app_constants.dart';
 import 'dart:convert';
@@ -41,7 +40,7 @@ class ReturnRequestNotifier extends StateNotifier<AsyncValue<void>> {
         reason: reason,
         evidenceUrls: evidenceUrls,
         createdAt: Timestamp.now(),
-        status: ReturnStatus.pending, // ✅ AWAL: PENDING (UNTUK ADMIN REVIEW)
+        status: ReturnStatus.pending,
       );
 
       await _repository.createReturnRequest(request);
@@ -73,11 +72,9 @@ class ReturnRequestNotifier extends StateNotifier<AsyncValue<void>> {
 
         if (response.statusCode != 200) {
           print('Warning: Gagal mengirim notifikasi: ${response.body}');
-          // Tidak throw error, karena yang penting status sudah diupdate
         }
       } catch (e) {
         print('Warning: Error mengirim notifikasi: $e');
-        // Tidak throw error, karena yang penting status sudah diupdate
       }
 
       state = const AsyncData(null);
@@ -92,14 +89,14 @@ class ReturnRequestNotifier extends StateNotifier<AsyncValue<void>> {
     try {
       // 1. Update status return request ke rejected
       await _repository.updateReturnRequestStatus(requestId, ReturnStatus.rejected);
-      
-      // 2. ✅ KEMBALIKAN TRANSAKSI KE STATUS DELIVERED
+
+      // 2. Kembalikan transaksi ke status delivered
       final request = await _repository.getReturnRequestById(requestId);
       await _ref.read(transactionProvider.notifier).updateTransactionStatus(
-        request.transactionId, 
-        TransactionStatus.delivered // ✅ KEMBALIKAN KE DELIVERED
+          request.transactionId,
+          TransactionStatus.delivered
       );
-      
+
       state = const AsyncData(null);
     } catch (e) {
       state = AsyncError(e, StackTrace.current);
@@ -120,49 +117,172 @@ class ReturnRequestNotifier extends StateNotifier<AsyncValue<void>> {
     state = const AsyncLoading();
     try {
       await _repository.respondToReturnRequest(requestId, responseReason);
-      
-      // ✅ UPDATE STATUS KE SELLER_RESPONDED SETELAH JASTIPER RESPON
+
+      // Update status ke seller_responded setelah jastiper respon
       await _repository.updateReturnRequestStatus(requestId, ReturnStatus.sellerResponded);
-      
+
       state = const AsyncData(null);
     } catch (e) {
       state = AsyncError(e, StackTrace.current);
     }
   }
 
-  // ✅ ADMIN FINALISASI - KEPUTUSAN AKHIR SETELAH JASTIPER RESPON
+  // ✅ ADMIN FINALISASI - KEPUTUSAN AKHIR DENGAN REFUND KE BUYER
   Future<void> finalizeReturn(String requestId, bool isApproved) async {
     state = const AsyncLoading();
     try {
+      // 1. Get return request data
       final request = await _repository.getReturnRequestById(requestId);
-      
-      if (isApproved) {
-        // ✅ ADMIN SETUJU: REFUND KE PEMBELI
-        await _repository.updateReturnRequestStatus(requestId, ReturnStatus.finalApproved);
-        
-        // Update transaction ke refunded dan cairkan dana kembali ke pembeli
-        await _ref.read(transactionProvider.notifier).updateTransactionStatus(
-          request.transactionId, 
-          TransactionStatus.refunded
-        );
-        
-        // TODO: Kembalikan dana ke pembeli (implementasi escrow refund)
-        // await _refundToBuyer(request.transactionId);
-        
-      } else {
-        // ✅ ADMIN TOLAK: KEMBALIKAN KE DELIVERED
-        await _repository.updateReturnRequestStatus(requestId, ReturnStatus.finalRejected);
-        
-        // Update transaction kembali ke delivered
-        await _ref.read(transactionProvider.notifier).updateTransactionStatus(
-          request.transactionId, 
-          TransactionStatus.delivered
-        );
+
+      // 2. Get transaction data untuk ambil informasi amount dan buyerId
+      final firestore = _ref.read(firebaseFirestoreProvider);
+      final transactionDoc = await firestore.collection('transactions').doc(request.transactionId).get();
+
+      if (!transactionDoc.exists) {
+        throw Exception('Transaksi tidak ditemukan');
       }
-      
+
+      final transactionData = transactionDoc.data() as Map<String, dynamic>;
+      final buyerId = transactionData['buyerId'] as String;
+      final amount = (transactionData['amount'] as num).toDouble();
+      final escrowAmount = (transactionData['escrowAmount'] as num?)?.toDouble() ?? amount;
+
+      print('🔍 [FinalizeReturn] Processing return for transaction ${request.transactionId}');
+      print('🔍 [FinalizeReturn] Buyer: $buyerId, Amount: $amount, Escrow: $escrowAmount');
+
+      if (isApproved) {
+        print('✅ [FinalizeReturn] Admin approved - Refunding to buyer');
+
+        // ✅ ADMIN SETUJU: REFUND KE PEMBELI
+        // 1. Update return request status
+        await _repository.updateReturnRequestStatus(requestId, ReturnStatus.finalApproved);
+
+        // 2. Update transaction status to refunded
+        await _ref.read(transactionProvider.notifier).updateTransactionStatus(
+            request.transactionId,
+            TransactionStatus.refunded
+        );
+
+        // 3. ✅ KEMBALIKAN DANA KE PEMBELI
+        await firestore.collection('users').doc(buyerId).update({
+          'saldo': FieldValue.increment(amount), // Kembalikan full amount ke buyer
+        });
+
+        // 4. ✅ UPDATE TRANSACTION DENGAN REFUND INFO
+        await firestore.collection('transactions').doc(request.transactionId).update({
+          'refundedAt': FieldValue.serverTimestamp(),
+          'refundAmount': amount,
+          'refundReason': 'Return approved by admin after seller response',
+        });
+
+        // 5. ✅ TAMBAHKAN LOG REFUND UNTUK AUDIT TRAIL
+        await firestore.collection('refund_logs').add({
+          'transactionId': request.transactionId,
+          'returnRequestId': requestId,
+          'buyerId': buyerId,
+          'sellerId': request.sellerId,
+          'refundAmount': amount,
+          'originalAmount': amount,
+          'escrowAmount': escrowAmount,
+          'reason': 'Final approved return by admin',
+          'buyerReason': request.reason,
+          'sellerResponse': request.responseReason,
+          'processedAt': FieldValue.serverTimestamp(),
+          'processedBy': 'admin',
+          'type': 'return_refund',
+        });
+
+        print('✅ [FinalizeReturn] Refund completed - $amount returned to buyer $buyerId');
+
+      } else {
+        print('❌ [FinalizeReturn] Admin rejected - Restoring transaction to delivered');
+
+        // ✅ ADMIN TOLAK: KEMBALIKAN KE DELIVERED
+        // 1. Update return request status
+        await _repository.updateReturnRequestStatus(requestId, ReturnStatus.finalRejected);
+
+        // 2. Update transaction kembali ke delivered
+        await _ref.read(transactionProvider.notifier).updateTransactionStatus(
+            request.transactionId,
+            TransactionStatus.delivered
+        );
+
+        // 3. ✅ UPDATE TRANSACTION DENGAN REJECTION INFO
+        await firestore.collection('transactions').doc(request.transactionId).update({
+          'returnRejectedAt': FieldValue.serverTimestamp(),
+          'returnRejectionReason': 'Final rejected by admin after seller response',
+        });
+
+        // 4. ✅ TAMBAHKAN LOG REJECTION UNTUK AUDIT TRAIL
+        await firestore.collection('return_rejection_logs').add({
+          'transactionId': request.transactionId,
+          'returnRequestId': requestId,
+          'buyerId': buyerId,
+          'sellerId': request.sellerId,
+          'reason': 'Final rejected return by admin',
+          'buyerReason': request.reason,
+          'sellerResponse': request.responseReason,
+          'processedAt': FieldValue.serverTimestamp(),
+          'processedBy': 'admin',
+          'type': 'return_rejection',
+        });
+
+        print('❌ [FinalizeReturn] Rejection completed - Transaction restored to delivered');
+      }
+
       state = const AsyncData(null);
+      print('🔍 [FinalizeReturn] Process completed successfully');
+
     } catch (e) {
+      print('❌ [FinalizeReturn] Error: $e');
       state = AsyncError(e, StackTrace.current);
+      rethrow; // Re-throw untuk error handling di UI
+    }
+  }
+
+  // ✅ TAMBAHAN: HELPER METHOD UNTUK GET TRANSACTION AMOUNT
+  Future<double> _getTransactionAmount(String transactionId) async {
+    try {
+      final firestore = _ref.read(firebaseFirestoreProvider);
+      final transactionDoc = await firestore.collection('transactions').doc(transactionId).get();
+
+      if (!transactionDoc.exists) {
+        throw Exception('Transaksi tidak ditemukan');
+      }
+
+      final data = transactionDoc.data() as Map<String, dynamic>;
+      return (data['amount'] as num).toDouble();
+    } catch (e) {
+      print('❌ [GetTransactionAmount] Error: $e');
+      throw Exception('Gagal mengambil jumlah transaksi: $e');
+    }
+  }
+
+  // ✅ TAMBAHAN: HELPER METHOD UNTUK REFUND PROCESS
+  Future<void> _processRefundToBuyer(String buyerId, double amount, String transactionId, String reason) async {
+    try {
+      final firestore = _ref.read(firebaseFirestoreProvider);
+
+      // 1. Kembalikan dana ke buyer
+      await firestore.collection('users').doc(buyerId).update({
+        'saldo': FieldValue.increment(amount),
+      });
+
+      // 2. Log refund transaction
+      await firestore.collection('transaction_logs').add({
+        'userId': buyerId,
+        'transactionId': transactionId,
+        'type': 'refund',
+        'amount': amount,
+        'reason': reason,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ [ProcessRefund] Successfully refunded $amount to buyer $buyerId');
+
+    } catch (e) {
+      print('❌ [ProcessRefund] Error: $e');
+      throw Exception('Gagal memproses refund: $e');
     }
   }
 
@@ -228,8 +348,8 @@ final returnRequestsByTransactionIdStreamProvider = StreamProvider.family<List<R
 // ✅ PROVIDER UNTUK CEK APAKAH TRANSAKSI PUNYA RETURN REQUEST AKTIF
 final hasActiveReturnRequestProvider = FutureProvider.family<bool, String>((ref, transactionId) async {
   final returnRequests = await ref.watch(returnRequestsByTransactionIdStreamProvider(transactionId).future);
-  return returnRequests.any((r) => 
-      r.status == ReturnStatus.pending ||
+  return returnRequests.any((r) =>
+  r.status == ReturnStatus.pending ||
       r.status == ReturnStatus.approved ||
       r.status == ReturnStatus.awaitingSellerResponse ||
       r.status == ReturnStatus.sellerResponded
