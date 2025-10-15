@@ -20,25 +20,19 @@ class Post extends Equatable {
   final Condition? condition;
   final String? brand;
   final String? size;
-  final String? weight; // ✅ UBAH KE STRING (BUKAN DOUBLE)
+  final String? weight;
   final String? additionalNotes;
   final List<String> imageUrls;
   final String? videoUrl;
   final Timestamp createdAt;
   final Timestamp updatedAt;
-
-  // Properties untuk interactions
   final bool isLiked;
   final int likesCount;
   final int commentsCount;
   final int currentOffers;
   final List<String> likedBy;
 
-  // Properties khusus untuk request
-  final String? syarat;
   final int? maxOffers;
-  final Timestamp? deadline;
-  final bool isPriceNegotiable;
   final bool isActive;
 
   const Post({
@@ -68,10 +62,7 @@ class Post extends Equatable {
     this.commentsCount = 0,
     this.currentOffers = 0,
     this.likedBy = const [],
-    this.syarat,
     this.maxOffers,
-    this.deadline,
-    this.isPriceNegotiable = false,
     this.isActive = true,
   });
 
@@ -105,10 +96,7 @@ class Post extends Equatable {
       commentsCount: data['commentsCount'] as int? ?? 0,
       currentOffers: data['currentOffers'] as int? ?? 0,
       likedBy: List<String>.from(data['likedBy'] ?? []),
-      syarat: data['syarat'] as String?,
       maxOffers: data['maxOffers'] as int?,
-      deadline: data['deadline'] as Timestamp?,
-      isPriceNegotiable: data['isPriceNegotiable'] as bool? ?? false,
       isActive: data['isActive'] as bool? ?? true,
     );
   }
@@ -168,10 +156,7 @@ class Post extends Equatable {
       'commentsCount': commentsCount,
       'currentOffers': currentOffers,
       'likedBy': likedBy,
-      'syarat': syarat,
       'maxOffers': maxOffers,
-      'deadline': deadline,
-      'isPriceNegotiable': isPriceNegotiable,
       'isActive': isActive,
     };
   }
@@ -203,10 +188,7 @@ class Post extends Equatable {
     int? commentsCount,
     int? currentOffers,
     List<String>? likedBy,
-    String? syarat,
     int? maxOffers,
-    Timestamp? deadline,
-    bool? isPriceNegotiable,
     bool? isActive,
   }) {
     return Post(
@@ -236,10 +218,7 @@ class Post extends Equatable {
       commentsCount: commentsCount ?? this.commentsCount,
       currentOffers: currentOffers ?? this.currentOffers,
       likedBy: likedBy ?? this.likedBy,
-      syarat: syarat ?? this.syarat,
       maxOffers: maxOffers ?? this.maxOffers,
-      deadline: deadline ?? this.deadline,
-      isPriceNegotiable: isPriceNegotiable ?? this.isPriceNegotiable,
       isActive: isActive ?? this.isActive,
     );
   }
@@ -250,7 +229,6 @@ class Post extends Equatable {
     price, location, locationCity, locationLat, locationLng,
     condition, brand, size, weight, additionalNotes, imageUrls,
     videoUrl, createdAt, updatedAt, isLiked, likesCount,
-    commentsCount, currentOffers, likedBy, syarat, maxOffers,
-    deadline, isPriceNegotiable, isActive,
+    commentsCount, currentOffers, likedBy, maxOffers, isActive,
   ];
 }

@@ -142,8 +142,7 @@ class PostWidget extends ConsumerWidget {
   }
 
   Widget _buildRequestInfo(Post post) {
-    final now = DateTime.now();
-    final isExpired = post.deadline?.toDate().isBefore(now) ?? false;
+    final isExpired = post.isActive;
     final currentOffers = post.currentOffers;
     final maxOffers = post.maxOffers ?? 1;
     final isFull = currentOffers >= maxOffers;
@@ -151,11 +150,19 @@ class PostWidget extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (post.deadline != null)
+        if (post.isActive ==false)
           Text(
-            'Deadline: ${DateFormat('dd/MM/yyyy HH:mm').format(post.deadline!.toDate())}',
+            'Tidak Aktif',
             style: TextStyle(
-              color: isExpired ? Colors.red : Colors.orange,
+              color: isExpired ? Colors.red : Colors.green,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        if (post.isActive ==true)
+          Text(
+            'Aktif',
+            style: TextStyle(
+              color: isExpired ? Colors.red : Colors.green,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -253,7 +260,7 @@ class PostWidget extends ConsumerWidget {
                       sellerId: post.userId,
                       sellerUsername: post.username,
                       addedAt: Timestamp.now(),
-                      deadline: post.deadline,
+                      isActive: post.isActive,
                       quantity: 1,
                     );
                     ref.read(cartProvider.notifier).addToCart(cartItem);
@@ -299,8 +306,7 @@ class PostWidget extends ConsumerWidget {
 
   // ✅ TOMBOL AMBIL PESANAN (REQUEST) - UPDATED
   Widget _buildRequestActionButton(BuildContext context, WidgetRef ref, Post post) {
-    final now = DateTime.now();
-    final isExpired = post.deadline?.toDate().isBefore(now) ?? false;
+    final isExpired = post.isActive;
     final currentOffers = post.currentOffers;
     final maxOffers = post.maxOffers ?? 1;
     final isFull = currentOffers >= maxOffers;

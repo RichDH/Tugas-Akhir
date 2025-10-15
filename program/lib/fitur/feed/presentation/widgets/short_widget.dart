@@ -97,7 +97,7 @@ class _ShortsWidgetState extends ConsumerState<ShortsWidget> {
                       sellerId: post.userId,
                       sellerUsername: post.username,
                       addedAt: Timestamp.now(),
-                      deadline: post.deadline,
+                      isActive: post.isActive,
                     );
                     ref.read(cartProvider.notifier).addToCart(cartItem);
                     ScaffoldMessenger.of(context).showSnackBar(

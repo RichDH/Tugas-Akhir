@@ -25,14 +25,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   final _categoryController = TextEditingController();
   final _priceController = TextEditingController();
   final _locationController = TextEditingController();
-  final _syaratController = TextEditingController(); // Untuk request
   final _maxOffersController = TextEditingController(); // Untuk request
-  final _deadlineController = TextEditingController(); // Untuk request
   final _brandController = TextEditingController(); // Field opsional
   final _sizeController = TextEditingController(); // Field opsional
   final _weightController = TextEditingController(); // Field opsional
   final _additionalNotesController = TextEditingController();
-  bool _isPriceNegotiable = false;// Field opsional
 
   PostType _selectedPostType = PostType.jastip;
   Condition _selectedCondition = Condition.baru;
@@ -130,9 +127,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _categoryController.dispose();
     _priceController.dispose();
     _locationController.dispose();
-    _syaratController.dispose();
     _maxOffersController.dispose();
-    _deadlineController.dispose();
     _brandController.dispose();
     _sizeController.dispose();
     _weightController.dispose();
@@ -147,9 +142,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _categoryController.clear();
     _priceController.clear();
     _locationController.clear();
-    _syaratController.clear();
     _maxOffersController.clear();
-    _deadlineController.clear();
     _brandController.clear();
     _sizeController.clear();
     _weightController.clear();
@@ -162,7 +155,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       _selectedLocation = null;
       _locationSuggestions = [];
       _selectedCategory = null;
-      _isPriceNegotiable = false;
     });
   }
 
@@ -284,9 +276,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       _selectedPostType = newValue;
                       // Reset field khusus request jika bukan request
                       if (newValue != PostType.request) {
-                        _syaratController.clear();
                         _maxOffersController.clear();
-                        _deadlineController.clear();
                       }
                     });
                   }
@@ -551,21 +541,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
               if (_selectedPostType == PostType.request) ...[
                 const SizedBox(height: 20),
                 TextFormField(
-                  controller: _syaratController,
-                  decoration: const InputDecoration(
-                    labelText: 'Toleransi Kenaikan Harga (%)',
-                    border: OutlineInputBorder(),
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Toleransi harga tidak boleh kosong';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
                   controller: _maxOffersController,
                   decoration: const InputDecoration(
                     labelText: 'Batas Jumlah Offer',
@@ -577,48 +552,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       return 'Batas offer tidak boleh kosong';
                     }
                     return null;
-                  },
-                ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: _deadlineController,
-                  decoration: const InputDecoration(
-                    labelText: 'Deadline (YYYY-MM-DD HH:MM)',
-                    border: OutlineInputBorder(),
-                  ),
-                  onTap: () async {
-                    final date = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime.now(),
-                      lastDate: DateTime(2030),
-                    );
-                    if (date != null) {
-                      final time = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now(),
-                      );
-                      if (time != null) {
-                        final dateTime = DateTime(
-                          date.year,
-                          date.month,
-                          date.day,
-                          time.hour,
-                          time.minute,
-                        );
-                        _deadlineController.text = dateTime.toIso8601String();
-                      }
-                    }
-                  },
-                ),
-                const SizedBox(height: 20),
-                SwitchListTile(
-                  title: const Text('Harga Bisa Dinegosiasi'),
-                  value: _isPriceNegotiable,
-                  onChanged: (value) {
-                    setState(() {
-                      _isPriceNegotiable = value;
-                    });
                   },
                 ),
               ],
@@ -654,12 +587,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         additionalNotes: _additionalNotesController.text.trim(),
                         imagePaths: _selectedImages.map((f) => f.path).toList(),
                         videoPath: _selectedVideo?.path,
-                        syarat: _syaratController.text.trim(),
                         maxOffers: int.tryParse(_maxOffersController.text.trim()),
-                        deadline: _deadlineController.text.isNotEmpty
-                            ? Timestamp.fromDate(DateTime.parse(_deadlineController.text))
-                            : null,
-                        isPriceNegotiable: _isPriceNegotiable,
                       );
                     }
                   },

@@ -204,7 +204,6 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Widget _buildProductDetails(post) {
-    // ✅ TAMPILKAN DEADLINE UNTUK REQUEST, HARGA UNTUK LAINNYA
     String displayPrice;
     if (_getPostTypeText(post.type) == 'REQUEST') {
       if (post.deadline != null) {
@@ -630,7 +629,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       sellerId: post.userId,
       sellerUsername: post.username,
       addedAt: Timestamp.now(),
-      deadline: post.deadline,
+      isActive: post.isActive,
       quantity: quantity,
     );
 

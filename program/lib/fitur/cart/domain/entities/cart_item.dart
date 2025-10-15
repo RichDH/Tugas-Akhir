@@ -10,7 +10,7 @@ class CartItem extends Equatable {
   final String sellerId;
   final String sellerUsername;
   final Timestamp addedAt;
-  final Timestamp? deadline;
+  final bool isActive;
   final int quantity;
 
   const CartItem({
@@ -22,7 +22,7 @@ class CartItem extends Equatable {
     required this.sellerId,
     required this.sellerUsername,
     required this.addedAt,
-    this.deadline,
+    required this.isActive,
     this.quantity = 1,
   });
 
@@ -38,7 +38,7 @@ class CartItem extends Equatable {
       sellerId: data['sellerId'] as String? ?? '',
       sellerUsername: data['sellerUsername'] as String? ?? '',
       addedAt: data['addedAt'] as Timestamp? ?? Timestamp.now(),
-      deadline: data['deadline'] as Timestamp?,
+      isActive: data['isActive'] as bool? ?? true,
       quantity: data['quantity'] as int? ?? 1,
     );
   }
@@ -64,7 +64,7 @@ class CartItem extends Equatable {
       'sellerId': sellerId,
       'sellerUsername': sellerUsername,
       'addedAt': addedAt,
-      'deadline': deadline,
+      'isActive': isActive,
       'quantity': quantity,
     };
   }
@@ -78,7 +78,7 @@ class CartItem extends Equatable {
     String? sellerId,
     String? sellerUsername,
     Timestamp? addedAt,
-    Timestamp? deadline,
+    bool? isActive,
     int? quantity,
   }) {
     return CartItem(
@@ -90,7 +90,7 @@ class CartItem extends Equatable {
       sellerId: sellerId ?? this.sellerId,
       sellerUsername: sellerUsername ?? this.sellerUsername,
       addedAt: addedAt ?? this.addedAt,
-      deadline: deadline ?? this.deadline,
+      isActive: isActive ?? this.isActive,
       quantity: quantity ?? this.quantity,
     );
   }
@@ -98,6 +98,6 @@ class CartItem extends Equatable {
   @override
   List<Object?> get props => [
     id, postId, title, price, imageUrl, sellerId,
-    sellerUsername, addedAt, deadline, quantity,
+    sellerUsername, addedAt, isActive, quantity,
   ];
 }

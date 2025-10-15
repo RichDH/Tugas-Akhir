@@ -175,10 +175,7 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
     String? additionalNotes,
     required List<String> imagePaths,
     String? videoPath,
-    String? syarat,
     int? maxOffers,
-    Timestamp? deadline,
-    bool isPriceNegotiable = false,
   }) async {
     state = const AsyncValue.loading();
 
@@ -236,7 +233,6 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
         'type': type.name,
         'category': category,
         'price': price,
-        'isPriceNegotiable': isPriceNegotiable,
         'location': location,
         'locationCity': locationCity ?? '',
         'locationLat': locationLat,
@@ -248,9 +244,7 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
         'size': size ?? '',
         'weight': weight ?? '', // ✅ SIMPAN SEBAGAI STRING
         'additionalNotes': additionalNotes ?? '',
-        'syarat': syarat ?? '',
         'maxOffers': maxOffers,
-        'deadline': deadline,
         'userId': currentUser.uid,
         'username': username, // ✅ USERNAME YANG BENAR
         'createdAt': FieldValue.serverTimestamp(),
