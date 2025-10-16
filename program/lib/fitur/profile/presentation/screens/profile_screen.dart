@@ -489,6 +489,7 @@ class ProfileScreen extends ConsumerWidget {
                                     'username': username,
                                     'chatRoomId': chatRoomId,
                                   });
+                                  debugPrint("aaaaa");
 
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
