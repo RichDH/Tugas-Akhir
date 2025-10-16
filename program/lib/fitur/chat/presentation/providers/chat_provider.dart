@@ -12,10 +12,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   ChatNotifier(this._ref) : super(ChatState());
 
-  // GANTI URL INI dengan URL NGROK Anda yang sedang berjalan
   final String _serverUrl = AppConstants.ngrokUrl;
 
-  // FUNGSI BARU: Untuk membuat chat room sebelum masuk ke halaman chat
+  // Membuat atau mendapatkan chat room
   Future<String> createOrGetChatRoom(String otherUserId) async {
     final firestore = _ref.read(firebaseFirestoreProvider);
     final currentUser = _ref.read(firebaseAuthProvider).currentUser;
@@ -27,43 +26,114 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String chatRoomId = ids.join('_');
 
     final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
-    final snapshot = await chatRoomRef.get();
 
-    if (!snapshot.exists) {
-      // Jika ruang chat belum ada, buat dulu dengan daftar penggunanya
-      await chatRoomRef.set({
-        'users': ids,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+    try {
+      final snapshot = await chatRoomRef.get();
+
+      if (!snapshot.exists) {
+        // Buat chat room baru dengan struktur yang aman
+        await chatRoomRef.set({
+          'users': ids,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastMessage': '',
+          'lastMessageTimestamp': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      print('Error creating chat room: $e');
+      // Tetap return chatRoomId meski ada error
     }
 
     return chatRoomId;
   }
 
-  // FUNGSI sendMessage yang sudah disederhanakan kembali
+  // Mengirim pesan reguler
   Future<void> sendMessage(String chatRoomId, String otherUserId, String text) async {
     final firestore = _ref.read(firebaseFirestoreProvider);
     final currentUser = _ref.read(firebaseAuthProvider).currentUser;
 
     if (currentUser == null || text.trim().isEmpty) return;
 
-    final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
-
-    // Langsung kirim pesan
-    await chatRoomRef.collection('messages').add({
-      'senderId': currentUser.uid,
-      'text': text.trim(),
-      'timestamp': FieldValue.serverTimestamp(),
-    });
-
-    // Update last message
-    await chatRoomRef.update({
-      'lastMessage': text.trim(),
-      'lastMessageTimestamp': FieldValue.serverTimestamp(),
-    });
-
-    // Panggil fungsi notifikasi
     try {
+      final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
+
+      // Pastikan chat room ada terlebih dahulu
+      await createOrGetChatRoom(otherUserId);
+
+      // Kirim pesan
+      await chatRoomRef.collection('messages').add({
+        'senderId': currentUser.uid,
+        'text': text.trim(),
+        'timestamp': FieldValue.serverTimestamp(),
+        'messageType': 'text',
+      });
+
+      // Update last message
+      await chatRoomRef.update({
+        'lastMessage': text.trim(),
+        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Kirim notifikasi
+      await _sendNotification(otherUserId, text.trim());
+
+    } catch (e) {
+      print("Error sending message: $e");
+      rethrow;
+    }
+  }
+
+  // Mengirim pesan penawaran
+  Future<void> sendOfferMessage(
+      String chatRoomId,
+      String otherUserId,
+      Map<String, dynamic> offerData
+      ) async {
+    final firestore = _ref.read(firebaseFirestoreProvider);
+    final currentUser = _ref.read(firebaseAuthProvider).currentUser;
+
+    if (currentUser == null) return;
+
+    try {
+      final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
+
+      // Pastikan chat room ada
+      await createOrGetChatRoom(otherUserId);
+
+      final offerText = 'Penawaran untuk ${offerData['postTitle']}';
+
+      // Kirim pesan penawaran
+      await chatRoomRef.collection('messages').add({
+        'senderId': currentUser.uid,
+        'text': offerText,
+        'timestamp': FieldValue.serverTimestamp(),
+        'messageType': 'offer',
+        'offerData': offerData,
+      });
+
+      // Update last message
+      await chatRoomRef.update({
+        'lastMessage': offerText,
+        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+      });
+
+      // Kirim notifikasi
+      await _sendNotification(otherUserId, offerText);
+
+    } catch (e) {
+      print("Error sending offer message: $e");
+      rethrow;
+    }
+  }
+
+  // Private method untuk notifikasi
+  Future<void> _sendNotification(String otherUserId, String messageText) async {
+    try {
+      final firestore = _ref.read(firebaseFirestoreProvider);
+      final currentUser = _ref.read(firebaseAuthProvider).currentUser;
+
+      if (currentUser == null) return;
+
       final userDoc = await firestore.collection('users').doc(currentUser.uid).get();
       final senderName = userDoc.data()?['username'] ?? 'Seseorang';
 
@@ -73,33 +143,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
         body: jsonEncode({
           'recipientId': otherUserId,
           'senderName': senderName,
-          'messageText': text.trim(),
+          'messageText': messageText,
         }),
       );
     } catch (e) {
-      print("Gagal memanggil fungsi notifikasi: $e");
+      print("Gagal mengirim notifikasi: $e");
+      // Jangan throw error, karena pesan sudah terkirim
     }
   }
 }
 
-// Provider untuk Notifier (tidak ada perubahan)
+// Provider yang sudah ada
 final chatNotifierProvider = StateNotifierProvider<ChatNotifier, ChatState>((ref) {
   return ChatNotifier(ref);
 });
 
-// Provider untuk mendapatkan stream pesan (tidak ada perubahan)
+// Provider untuk stream pesan dengan error handling yang lebih baik
 final messagesStreamProvider =
 StreamProvider.family.autoDispose<QuerySnapshot, String>((ref, chatRoomId) {
   final firestore = ref.watch(firebaseFirestoreProvider);
+
   return firestore
       .collection('chats')
       .doc(chatRoomId)
       .collection('messages')
       .orderBy('timestamp', descending: true)
-      .snapshots();
+      .snapshots()
+      .handleError((error) {
+    print('Messages stream error: $error');
+    // Kembalikan stream kosong jika ada error
+    return Stream.fromIterable([]);
+  });
 });
 
-// Provider untuk mendapatkan daftar chat room (tidak ada perubahan)
+// Provider untuk daftar chat rooms
 final chatRoomsStreamProvider = StreamProvider.autoDispose<QuerySnapshot>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   final currentUser = ref.watch(firebaseAuthProvider).currentUser;
@@ -112,6 +189,31 @@ final chatRoomsStreamProvider = StreamProvider.autoDispose<QuerySnapshot>((ref) 
       .collection('chats')
       .where('users', arrayContains: currentUser.uid)
       .orderBy('lastMessageTimestamp', descending: true)
-      .snapshots();
+      .snapshots()
+      .handleError((error) {
+    print('Chat rooms stream error: $error');
+    return Stream.fromIterable([]);
+  });
 });
 
+// Provider untuk mendapatkan active posts user lain
+final otherUserActivePostsProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, userId) async {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+
+  try {
+    final snapshot = await firestore
+        .collection('posts')
+        .where('userId', isEqualTo: userId)
+        .where('isActive', isEqualTo: true)
+        .get();
+
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+  } catch (e) {
+    print('Error loading other user posts: $e');
+    return [];
+  }
+});

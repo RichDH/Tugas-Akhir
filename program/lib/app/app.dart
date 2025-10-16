@@ -78,12 +78,19 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/chat/:userId',
         builder: (context, state) {
           final userId = state.pathParameters['userId']!;
-          final username = state.extra as String;
+          final extra = state.extra;
 
-          // Panggil constructor yang sudah diperbaiki
+          String otherUsername = 'Pengguna';
+          if (extra is String) {
+            otherUsername = extra;
+          } else if (extra is Map) {
+            final map = Map<String, dynamic>.from(extra as Map);
+            otherUsername = (map['username'] ?? map['name'] ?? 'Pengguna').toString();
+          }
+
           return ChatScreen(
             otherUserId: userId,
-            otherUsername: username,
+            otherUsername: otherUsername,
           );
         },
       ),
