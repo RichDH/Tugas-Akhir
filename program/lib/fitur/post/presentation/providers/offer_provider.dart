@@ -9,6 +9,9 @@ import 'package:program/fitur/post/domain/entities/offer.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../../core/exception/balance_exception.dart';
+import '../../../jualbeli/domain/entities/transaction_entity.dart' as domain;
+
 final offerRepositoryProvider = Provider<OfferRepository>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   return OfferRepositoryImpl(firestore);
@@ -58,74 +61,88 @@ class OfferNotifier extends StateNotifier<AsyncValue<void>> {
     try {
       final firestore = _ref.read(firebaseFirestoreProvider);
 
-      // 1) Tandai offer diterima
-      await _repository.acceptOffer(offerId);
-
-      // 2) Kumpulkan data user (buyer = pemilik request)
       final buyerId = offer.postOwnerId;
       final sellerId = offer.offererId;
       final totalAmount = offer.offerPrice * quantity;
 
-      // Ambil profil buyer (saldo, alamat, username)
+      // 1) ✅ AMBIL DATA POST LENGKAP (UNTUK ITEMS)
+      final postDoc = await firestore.collection('posts').doc(offer.postId).get();
+      if (!postDoc.exists) {
+        throw Exception('Data post tidak ditemukan');
+      }
+      final postData = postDoc.data() as Map<String, dynamic>;
+      final imageUrls = List<String>.from(postData['imageUrls'] ?? []);
+
+      // 2) ✅ AMBIL DATA BUYER LENGKAP (SALDO & ALAMAT)
       final buyerDoc = await firestore.collection('users').doc(buyerId).get();
       if (!buyerDoc.exists) {
         throw Exception('Data pembeli tidak ditemukan');
       }
       final buyerData = buyerDoc.data() as Map<String, dynamic>;
-      final buyerBalance = (buyerDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
+      final buyerBalance = (buyerData['saldo'] as num?)?.toDouble() ?? 0.0;
 
-      final buyerAddress = buyerDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
+      final alamat = buyerData['alamat'] as String?;
+      final buyerAddress = (alamat != null && alamat.trim().isNotEmpty)
+          ? alamat.trim()
+          : 'Alamat tidak tersedia';
 
-      // 3) Cek saldo
+
+      // 3) ✅ CEK SALDO
       if (buyerBalance < totalAmount) {
-        state = AsyncError(
-          Exception('Saldo tidak mencukupi. Butuh: ${NumberFormat.currency(locale: "id_ID", symbol: "Rp ", decimalDigits: 0).format(totalAmount - buyerBalance)}'),
-          StackTrace.current,
+        throw InsufficientBalanceException(
+          required: totalAmount,
+          available: buyerBalance,
         );
-        return;
       }
 
-      // 4) Potong saldo buyer (escrow) di awal
+      // 4) ✅ POTONG SALDO
       await firestore.collection('users').doc(buyerId).update({
         'saldo': FieldValue.increment(-totalAmount),
       });
 
       try {
+        // 5) ✅ BUAT TRANSAKSI DENGAN STRUKTUR SAMA SEPERTI "BELI LANGSUNG"
         await firestore.collection('transactions').add({
           'postId': offer.postId,
           'buyerId': buyerId,
           'sellerId': sellerId,
           'amount': totalAmount,
           'status': 'pending',
-          'createdAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(), // ✅ GUNAKAN serverTimestamp
           'buyerAddress': buyerAddress,
           'items': [
             {
               'postId': offer.postId,
               'title': offer.postTitle,
-              'price': offer.offerPrice,
+              'price': offer.offerPrice, // ✅ HARGA SESUAI OFFER, BUKAN POST
               'quantity': quantity,
-              'imageUrl': '', // optional: isi jika Anda punya url dari post
+              'imageUrl': imageUrls.isNotEmpty ? imageUrls[0] : '', // ✅ AMBIL GAMBAR DARI POST
             }
           ],
           'isEscrow': true,
           'escrowAmount': totalAmount,
           'isAcceptedBySeller': false,
-          'type': 'offer_accept', // penanda dibuat dari offer
+          'type': 'offer_accept', // ✅ PENANDA DARI OFFER
         });
+
+        // 6) ✅ BARU SEKARANG ACCEPT OFFER (SETELAH TRANSAKSI BERHASIL)
+        await _repository.acceptOffer(offerId);
 
         state = const AsyncData(null);
       } catch (e) {
-        // 6) Rollback saldo jika pembuatan transaksi gagal
+        // 7) ✅ ROLLBACK SALDO JIKA TRANSAKSI GAGAL
         await firestore.collection('users').doc(buyerId).update({
           'saldo': FieldValue.increment(totalAmount),
         });
         rethrow;
       }
-    } catch (e) {
-      state = AsyncError(e, StackTrace.current);
+    } catch (e, st) {
+      state = AsyncError(e, st);
+      rethrow;
     }
   }
+
+
 
   Future<void> rejectOffer(String offerId, String reason) async {
     state = const AsyncLoading();

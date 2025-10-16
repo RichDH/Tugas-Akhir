@@ -775,7 +775,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           .doc(userId)
           .get();
 
-      final userAddress = userDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
+      final alamat = userDoc.data()?['alamat'] as String?;
+      final userAddress = (alamat != null && alamat.trim().isNotEmpty)
+          ? alamat.trim()
+          : 'Alamat tidak tersedia';
+
 
       // ✅ POTONG SALDO DULU (ESCROW) - PERBAIKI FIELD NAME
       await FirebaseFirestore.instance
@@ -936,7 +940,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             onPressed: () {
               Navigator.pop(context);
               // TODO: Navigate to top-up page
-              context.push('/topup');
+              context.push('/top-up');
             },
             child: const Text('Top Up'),
           ),

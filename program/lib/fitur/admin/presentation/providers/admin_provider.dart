@@ -23,6 +23,9 @@ class AdminNotifier extends StateNotifier<AsyncValue<void>> {
       await firestore.collection('users').doc(userId).update({
         'verificationStatus': newStatus,
       });
+      await firestore.collection('users').doc(userId).update({
+        'isVerified': true,
+      });
       state = const AsyncData(null);
     } catch (e, stack) {
       state = AsyncError(e, stack);

@@ -676,7 +676,7 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
 
     if (!mounted) return;
 
-    if (verified) {
+    if (!verified) {
       // Seller belum terverifikasi → langsung ke accepted (paid) seperti biasa
       showDialog(
         context: context,
@@ -856,7 +856,7 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
 
   Future<bool> _isSellerVerified(String sellerId) async {
     final doc = await FirebaseFirestore.instance.collection('users').doc(sellerId).get();
-    return (doc.data()?['verificationStatus'] ?? 'verified') == false;
+    return doc.data()?['isVerified'];
   }
 
   Future<void> _releaseFundsToSeller({

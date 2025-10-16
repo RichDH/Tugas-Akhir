@@ -2,10 +2,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/post/domain/entities/offer.dart';
 import 'package:program/fitur/post/presentation/providers/offer_provider.dart';
+
+import '../../../../core/exception/balance_exception.dart';
 
 class RequestHistoryScreen extends ConsumerStatefulWidget {
   const RequestHistoryScreen({super.key});
@@ -342,24 +345,216 @@ class _RequestHistoryScreenState extends ConsumerState<RequestHistoryScreen>
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Tawaran diterima! Transaksi berhasil dibuat.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        _showSuccessDialog(offer.offerPrice * quantity);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        // ✅ CEK JENIS ERROR DAN TAMPILKAN DIALOG YANG SESUAI
+        if (e is InsufficientBalanceException) {
+          _showInsufficientBalanceDialog(e.required, e.available);
+        } else {
+          _showGenericErrorDialog(e.toString());
+        }
       }
     }
   }
+
+// ✅ DIALOG SUCCESS
+  void _showSuccessDialog(double totalAmount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tawaran Diterima'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.check_circle,
+              size: 64,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Transaksi berhasil dibuat!',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Column(
+                children: [
+                  Text(
+                    '🔒 Saldo telah dipotong dan disimpan aman',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Penjual akan segera memproses pesanan',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Navigate to transaction history
+              context.push('/transaction-history');
+            },
+            child: const Text('Lihat Transaksi'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// ✅ DIALOG SALDO TIDAK CUKUP (COPY DARI POST_DETAIL_SCREEN)
+  void _showInsufficientBalanceDialog(double totalAmount, double userBalance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Saldo Tidak Mencukupi'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_balance_wallet,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Saldo Anda: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(userBalance)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              'Total yang dibutuhkan: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Kurang: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount - userBalance)}',
+              style: const TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange),
+              ),
+              child: const Column(
+                children: [
+                  Text(
+                    '💡 Silakan top up saldo Anda terlebih dahulu',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Tawaran masih bisa diterima setelah saldo mencukupi',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // TODO: Navigate to top-up page
+              context.push('/top-up');
+            },
+            child: const Text('Top Up Saldo'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// ✅ DIALOG ERROR UMUM
+  void _showGenericErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Terjadi Kesalahan'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Gagal memproses tawaran',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Text(
+                errorMessage,
+                style: const TextStyle(fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Silakan coba lagi atau hubungi customer service',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              // Refresh untuk coba lagi
+              ref.invalidate(offersByPostOwnerProvider);
+            },
+            child: const Text('Coba Lagi'),
+          ),
+        ],
+      ),
+    );
+  }
+
+
 
   void _rejectOffer(String offerId, String reason) async {
     Navigator.pop(context); // Close dialog
@@ -441,7 +636,7 @@ class _OfferCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               isMyOffer
-                  ? 'Request dari user lain'
+                  ? 'Request dari anda'
                   : 'Ditawarkan oleh: ${offer.offererUsername}',
               style: const TextStyle(color: Colors.grey),
             ),
