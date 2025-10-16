@@ -28,8 +28,8 @@ class ProfileScreen extends ConsumerWidget {
 
     final userProfileAsync = ref.watch(userProfileStreamProvider(targetUserId));
     final userPostsAsync = ref.watch(userPostsStreamProvider(targetUserId));
-    final followersCount = ref.watch(followersCountProvider(targetUserId)).value ?? 0;
-    final followingCount = ref.watch(followingCountProvider(targetUserId)).value ?? 0;
+    final followersCount = ref.watch(followersCountStreamProvider(targetUserId)).value ?? 0;
+    final followingCount = ref.watch(followingCountStreamProvider(targetUserId)).value ?? 0;
     final userRequestsAsync = ref.watch(userRequestsStreamProvider(targetUserId));
     final userShortsAsync = ref.watch(userShortsStreamProvider(targetUserId));
     final userLiveHistoryAsync = ref.watch(userLiveHistoryStreamProvider(targetUserId));
@@ -403,6 +403,8 @@ class ProfileScreen extends ConsumerWidget {
             final bio = userData['bio'] as String? ?? '';
             final profileImageUrl = userData['profileImageUrl'] as String? ?? '';
             final name = userData['name'] as String? ?? username;
+            final followersCount = ref.watch(followersCountStreamProvider(targetUserId)).value ?? 0;
+            final followingCount = ref.watch(followingCountStreamProvider(targetUserId)).value ?? 0;
 
             return Column(
               children: [
@@ -468,13 +470,43 @@ class ProfileScreen extends ConsumerWidget {
                 else
                   Row(
                     children: [
+                      // ✅ FIX: Tombol Follow/Unfollow
                       Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {},
-                          child: const Text('Follow'),
+                        child: Consumer(
+                          builder: (context, ref, _) {
+                            final isFollowingAsync = ref.watch(isFollowingProvider(targetUserId));
+                            final followNotifier = ref.read(followProvider.notifier);
+                            final followState = ref.watch(followProvider);
+
+                            final isFollowing = isFollowingAsync.value ?? false;
+                            final isLoading = followState.isLoading;
+
+                            return ElevatedButton(
+                              onPressed: isLoading ? null : () {
+                                followNotifier.toggleFollow(targetUserId);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isFollowing
+                                    ? Colors.grey.shade300
+                                    : Theme.of(context).primaryColor,
+                                foregroundColor: isFollowing
+                                    ? Colors.black87
+                                    : Colors.white,
+                                minimumSize: const Size(double.infinity, 36),
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                                  : Text(isFollowing ? 'Unfollow' : 'Follow'),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 8),
+                      // Tombol Message tetap sama
                       Expanded(
                         child: Consumer(
                           builder: (context, ref, child) {
@@ -489,8 +521,6 @@ class ProfileScreen extends ConsumerWidget {
                                     'username': username,
                                     'chatRoomId': chatRoomId,
                                   });
-                                  debugPrint("aaaaa");
-
                                 } catch (e) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(content: Text("Gagal memulai chat: ${e.toString()}"))
