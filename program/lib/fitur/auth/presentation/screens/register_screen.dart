@@ -1,5 +1,5 @@
-// File: program/lib/fitur/auth/presentation/screens/register_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +18,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final confirmPasswordController = TextEditingController();
   final usernameController = TextEditingController();
   final formKey = GlobalKey<FormState>();
+  Timer? _debounceTimer;
 
   // TAMBAHAN BARU: State untuk username checking
   bool _isCheckingUsername = false;
@@ -25,30 +26,88 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   // TAMBAHAN BARU: Method untuk cek username secara real-time
   Future<void> _checkUsername(String username) async {
-    if (username.length < 3) return;
+    // Cancel previous timer
+    _debounceTimer?.cancel();
 
+    // Validasi input awal
+    if (username.trim().isEmpty) {
+      setState(() {
+        _isCheckingUsername = false;
+        _usernameError = null;
+      });
+      return;
+    }
+
+    if (username.trim().length < 3) {
+      setState(() {
+        _isCheckingUsername = false;
+        _usernameError = 'Username minimal 3 karakter';
+      });
+      return;
+    }
+
+    // Validasi karakter
+    if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username.trim())) {
+      setState(() {
+        _isCheckingUsername = false;
+        _usernameError = 'Hanya huruf, angka, dan underscore yang diizinkan';
+      });
+      return;
+    }
+
+    // Set checking state
     setState(() {
       _isCheckingUsername = true;
       _usernameError = null;
     });
 
-    try {
-      final isAvailable = await ref.read(authProvider.notifier).isUsernameAvailable(username);
+    // Debounce untuk menghindari terlalu banyak request
+    _debounceTimer = Timer(const Duration(milliseconds: 800), () async {
+      try {
+        print('🔍 [CheckUsername] Checking username: $username');
 
-      setState(() {
-        _isCheckingUsername = false;
-        _usernameError = isAvailable ? null : 'Username sudah digunakan';
-      });
-    } catch (e) {
-      setState(() {
-        _isCheckingUsername = false;
-        _usernameError = 'Gagal memeriksa username';
-      });
-    }
+        final isAvailable = await ref.read(authProvider.notifier).isUsernameAvailable(username.trim());
+
+        if (mounted) {
+          setState(() {
+            _isCheckingUsername = false;
+            if (isAvailable) {
+              _usernameError = null;
+              print('✅ [CheckUsername] Username $username available');
+            } else {
+              _usernameError = 'Username sudah digunakan';
+              print('❌ [CheckUsername] Username $username taken');
+            }
+          });
+        }
+      } catch (e) {
+        print('❌ [CheckUsername] Error checking username: $e');
+
+        if (mounted) {
+          setState(() {
+            _isCheckingUsername = false;
+
+            // ✅ ERROR HANDLING YANG LEBIH BAIK
+            String errorMessage = 'Gagal memeriksa username';
+
+            if (e.toString().contains('timeout')) {
+              errorMessage = 'Koneksi timeout, coba lagi';
+            } else if (e.toString().contains('permission-denied')) {
+              errorMessage = 'Tidak ada akses internet';
+            } else if (e.toString().contains('unavailable')) {
+              errorMessage = 'Server tidak tersedia';
+            }
+
+            _usernameError = errorMessage;
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
@@ -134,18 +193,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   helperText: 'Minimal 3 karakter, hanya huruf, angka, dan underscore',
                 ),
                 onChanged: (value) {
-                  if (value.length >= 3) {
-                    // Debounce untuk menghindari terlalu banyak request
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      if (usernameController.text == value) {
-                        _checkUsername(value);
-                      }
-                    });
-                  } else {
+                  _debounceTimer?.cancel();
+                  if (value.trim().isEmpty) {
                     setState(() {
+                      _isCheckingUsername = false;
                       _usernameError = null;
                     });
+                    return;
                   }
+
+                  if (value.trim().length < 3) {
+                    setState(() {
+                      _isCheckingUsername = false;
+                      _usernameError = 'Username minimal 3 karakter';
+                    });
+                    return;
+                  }
+
+                  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(value.trim())) {
+                    setState(() {
+                      _isCheckingUsername = false;
+                      _usernameError = 'Hanya huruf, angka, dan underscore';
+                    });
+                    return;
+                  }
+
+                  _checkUsername(value.trim());
                 },
                 validator: (value) {
                   if (value == null || value.isEmpty) {

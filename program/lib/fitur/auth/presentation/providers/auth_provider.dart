@@ -62,18 +62,63 @@ class AuthNotifier extends StateNotifier<AuthState> {
   // Metode untuk Register
   // Tambahkan method untuk cek username di AuthNotifier class:
 
+  // ✅ METHOD isUsernameAvailable YANG DIPERBAIKI - DENGAN PROPER ERROR HANDLING
   Future<bool> isUsernameAvailable(String username) async {
     try {
+      // Validasi input
+      if (username.trim().isEmpty) {
+        throw Exception('Username tidak boleh kosong');
+      }
+
+      if (username.trim().length < 3) {
+        throw Exception('Username minimal 3 karakter');
+      }
+
+      // Normalisasi username (lowercase untuk konsistensi)
+      final normalizedUsername = username.trim().toLowerCase();
+
+      print('🔍 [IsUsernameAvailable] Checking username: $normalizedUsername');
+
+      // Query dengan timeout untuk menghindari hang
       final querySnapshot = await _firestore
           .collection('users')
-          .where('username', isEqualTo: username)
-          .get();
+          .where('username', isEqualTo: normalizedUsername)
+          .limit(1) // ✅ OPTIMISASI: Hanya butuh 1 dokumen untuk validasi
+          .get()
+          .timeout(
+        const Duration(seconds: 10), // ✅ TIMEOUT 10 DETIK
+        onTimeout: () {
+          print('❌ [IsUsernameAvailable] Timeout checking username');
+          throw Exception('Koneksi timeout, coba lagi');
+        },
+      );
 
-      return querySnapshot.docs.isEmpty;
+      final isAvailable = querySnapshot.docs.isEmpty;
+      print('🔍 [IsUsernameAvailable] Username $normalizedUsername available: $isAvailable');
+
+      return isAvailable;
+    } on FirebaseException catch (e) {
+      print('❌ [IsUsernameAvailable] Firebase error: ${e.code} - ${e.message}');
+
+      // Handle specific Firebase errors
+      if (e.code == 'permission-denied') {
+        throw Exception('Tidak ada akses untuk memeriksa username. Periksa koneksi internet.');
+      } else if (e.code == 'unavailable') {
+        throw Exception('Server tidak tersedia, coba lagi nanti');
+      } else {
+        throw Exception('Error database: ${e.message}');
+      }
     } catch (e) {
-      throw Exception('Gagal memeriksa ketersediaan username');
+      print('❌ [IsUsernameAvailable] General error: $e');
+
+      if (e.toString().contains('timeout') || e.toString().contains('Timeout')) {
+        throw Exception('Koneksi timeout, periksa internet dan coba lagi');
+      }
+
+      throw Exception('Gagal memeriksa username: ${e.toString()}');
     }
   }
+
 
 // Update method register:
   Future<void> register(String email, String password, String username) async {
@@ -147,7 +192,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final isAdminProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateChangesProvider);
   final user = authState.value;
-  return user?.email == 'adminngoper87@gmail.com';
+  return user?.email == 'admin@.com';
 });
 
 // Provider untuk AuthNotifier

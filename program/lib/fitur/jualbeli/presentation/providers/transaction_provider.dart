@@ -227,31 +227,68 @@ final transactionsBySellerStreamProvider = StreamProvider.family<List<Transactio
 });
 
 // ✅ PROVIDER UNTUK STREAM TRANSAKSI BERDASARKAN ID
+// ✅ PROVIDER BARU YANG AMAN - GANTI YANG LAMA
 final transactionByIdStreamProvider = StreamProvider.family<Transaction, String>((ref, transactionId) {
-  final firestore = ref.watch(firebaseFirestoreProvider);
+  final authState = ref.watch(authStateChangesProvider);
+  final firestoreA = ref.watch(firebaseFirestoreProvider);
 
-  // Validasi input
-  if (transactionId.isEmpty) {
-    return Stream.error('Transaction ID tidak boleh kosong');
-  }
+  return authState.when(
+    loading: () => Stream.value(Transaction(
+      id: transactionId,
+      postId: '',
+      buyerId: '',
+      sellerId: '',
+      amount: 0.0,
+      status: TransactionStatus.pending,
+      createdAt: firestore.Timestamp.now(),
+      isEscrow: false,
+      escrowAmount: 0.0,
+      isAcceptedBySeller: false,
+    )), // Dummy transaction saat loading
+    error: (error, _) => Stream.error('Auth error: $error'),
+    data: (user) {
+      if (user == null) {
+        return Stream.error('User not authenticated');
+      }
 
-  return firestore
-      .collection('transactions')
-      .doc(transactionId)
-      .snapshots()
-      .map((doc) {
-    if (!doc.exists) {
-      throw Exception('Transaksi dengan ID $transactionId tidak ditemukan');
-    }
+      // Validasi input
+      if (transactionId.isEmpty) {
+        return Stream.error('Transaction ID tidak boleh kosong');
+      }
 
-    try {
-      return Transaction.fromFirestore(doc);
-    } catch (e) {
-      print('Error parsing transaction $transactionId: $e');
-      throw Exception('Gagal mengambil data transaksi: $e');
-    }
-  });
+      print('🔍 [TransactionById] User: ${user.uid}, TxnId: $transactionId');
+
+      try {
+        return firestoreA
+            .collection('transactions')
+            .doc(transactionId)
+            .snapshots()
+            .map((doc) {
+          if (!doc.exists) {
+            print('❌ [TransactionById] Document $transactionId not found');
+            throw Exception('Transaksi dengan ID ${transactionId.substring(0, 8)}... tidak ditemukan');
+          }
+
+          try {
+            final transaction = Transaction.fromFirestore(doc);
+            print('🔍 [TransactionById] Got transaction: ${transaction.id}, status: ${transaction.status}');
+            return transaction;
+          } catch (e) {
+            print('❌ [TransactionById] Error parsing doc $transactionId: $e');
+            throw Exception('Gagal mengambil data transaksi: $e');
+          }
+        }).handleError((error, stackTrace) {
+          print('❌ [TransactionById] Stream error: $error');
+          throw error;
+        });
+      } catch (e) {
+        print('❌ [TransactionById] Exception setting up stream: $e');
+        return Stream.error('Setup error: $e');
+      }
+    },
+  );
 });
+
 
 
 // ✅ PROVIDER UNTUK USERNAME BERDASARKAN USER ID

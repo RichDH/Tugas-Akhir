@@ -72,8 +72,9 @@ class OfferNotifier extends StateNotifier<AsyncValue<void>> {
         throw Exception('Data pembeli tidak ditemukan');
       }
       final buyerData = buyerDoc.data() as Map<String, dynamic>;
-      final buyerBalance = (buyerData['saldo'] as num?)?.toDouble() ?? 0.0;
-      final buyerAddress = buyerData['alamat'] as String? ?? 'Alamat tidak tersedia';
+      final buyerBalance = (buyerDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
+
+      final buyerAddress = buyerDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
 
       // 3) Cek saldo
       if (buyerBalance < totalAmount) {

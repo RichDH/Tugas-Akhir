@@ -720,6 +720,7 @@ class _ReturnRequestCard extends ConsumerWidget {
   }
 
   // ✅ BUILD TRANSACTION INFO DENGAN ERROR HANDLING
+// ✅ BUILD TRANSACTION INFO DENGAN ERROR HANDLING YANG LEBIH BAIK
   Widget _buildTransactionInfo(WidgetRef ref, String transactionId) {
     final transactionAsync = ref.watch(transactionByIdStreamProvider(transactionId));
 
@@ -771,28 +772,50 @@ class _ReturnRequestCard extends ConsumerWidget {
           ],
         ),
       ),
-      error: (err, stack) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.red.shade200),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error, size: 16, color: Colors.red),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                'Error memuat transaksi: ${transactionId.substring(0, 8)}...',
-                style: const TextStyle(color: Colors.red, fontSize: 12),
+      error: (err, stack) {
+        print('❌ [BuildTransactionInfo] Error: $err');
+
+        // ✅ TAMPILAN ERROR YANG TIDAK MENGGANGGU - BUKAN KOTAK MERAH BESAR
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.amber.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.amber.shade300),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16, color: Colors.amber),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Info transaksi tidak tersedia',
+                      style: TextStyle(
+                        color: Colors.amber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      'ID: ${transactionId.substring(0, 8)}...',
+                      style: const TextStyle(
+                        color: Colors.amber,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
+
 
   // ✅ BUILD USER INFO DENGAN ERROR HANDLING
   Widget _buildUserInfo(WidgetRef ref, String buyerId, String sellerId) {

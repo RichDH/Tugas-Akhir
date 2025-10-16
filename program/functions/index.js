@@ -46,7 +46,7 @@ app.post("/create-room", async (req, res) => {
 });
 
 // ✅ CRON JOB LENGKAP: Auto-complete dengan pencairan dana
-cron.schedule('* * * * *', async () => {
+cron.schedule('*/2 * * * *', async () => {
   console.log('[CRON] Menjalankan auto-complete transaksi lengkap...');
   try {
     const now = admin.firestore.Timestamp.now();
@@ -86,7 +86,7 @@ cron.schedule('* * * * *', async () => {
           const activeReturns = await admin.firestore()
             .collection('return_requests')
             .where('transactionId', '==', transactionId)
-            .where('status', 'in', ['pending', 'awaitingSellerResponse', 'approved'])
+            .where('status', 'in', ['pending', 'awaitingSellerResponse', 'approved', 'sellerResponded'])
             .get();
 
           if (!activeReturns.empty) {
@@ -151,53 +151,133 @@ cron.schedule('* * * * *', async () => {
   }
 });
 
-
-// ✅ CRON JOB: Auto-handle retur yang tidak direspon dalam 15 menit
-cron.schedule('*/15 * * * *', async () => {
+cron.schedule('*/2 * * * *', async () => {
   console.log('[CRON] Memeriksa retur yang belum direspon...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 200, now.nanoseconds);
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 70, now.nanoseconds);
 
+    // Ambil retur yang menunggu respons seller dan sudah lewat 15 menit
     const returnRequests = await admin.firestore()
       .collection('return_requests')
       .where('status', '==', 'awaitingSellerResponse')
       .where('createdAt', '<=', fifteenMinutesAgo)
+      .limit(200)
       .get();
 
-    const batch = admin.firestore().batch();
-    let count = 0;
-
-    for (const doc of returnRequests.docs) {
-      const data = doc.data();
-      const transactionId = data.transactionId;
-
-      // 1. Update status retur → finalRejected
-      batch.update(doc.ref, {
-        status: 'finalApproved',
-        respondedAt: admin.firestore.FieldValue.serverTimestamp(),
-        responseReason: 'Jastiper tidak merespon dalam 15 menit',
-      });
-
-      // 2. Kembalikan dana ke pembeli (simulasi)
-      const transactionRef = admin.firestore().collection('transactions').doc(transactionId);
-      batch.update(transactionRef, {
-        status: 'refunded',
-        completedAt: admin.firestore.FieldValue.serverTimestamp(),
-        rating: null,
-      });
-
-      count++;
+    if (returnRequests.empty) {
+      console.log('[CRON] Tidak ada retur yang perlu diproses.');
+      return;
     }
 
-    if (count > 0) {
-      await batch.commit();
-      console.log(`[CRON] ${count} retur otomatis ditolak karena tidak direspon.`);
+    let done = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const rrDoc of returnRequests.docs) {
+      const rr = rrDoc.data();
+      const requestId = rrDoc.id;
+      const transactionId = rr.transactionId;
+      const sellerId = rr.sellerId;
+      const buyerReason = rr.reason || '';
+      const sellerResponse = rr.responseReason || '';
+
+      try {
+        // Ambil transaksi terkait
+        const txRef = admin.firestore().collection('transactions').doc(transactionId);
+        const txSnap = await txRef.get();
+        if (!txSnap.exists) {
+          console.warn(`[CRON][RET] Skip ${requestId} - transaksi ${transactionId} tidak ditemukan`);
+          skipped++;
+          continue;
+        }
+
+        const tx = txSnap.data();
+        const buyerId = tx.buyerId;
+        // Gunakan amount sebagai total pengembalian; jika ada escrowAmount dan ingin berbeda, sesuaikan
+        const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount || 0);
+        const escrowAmount = typeof tx.escrowAmount === 'number' ? tx.escrowAmount : parseFloat(tx.escrowAmount || amount || 0);
+
+        // Idempoten: jika sudah refunded / return finalApproved, jangan proses ulang
+        const alreadyRefunded = tx.status === 'refunded' || tx.refundedAt;
+        const rrAlreadyFinal = rr.status === 'finalApproved' || rr.status === 'finalRejected';
+        if (alreadyRefunded || rrAlreadyFinal) {
+          console.log(`[CRON][RET] Skip ${requestId} - sudah final/refunded`);
+          skipped++;
+          continue;
+        }
+
+        // Batch untuk atomicity
+        const batch = admin.firestore().batch();
+
+        // 1) Update return_request -> finalApproved
+        batch.update(rrDoc.ref, {
+          status: 'finalApproved',
+          respondedAt: admin.firestore.FieldValue.serverTimestamp(),
+          responseReason: 'Jastiper tidak merespon dalam 15 menit',
+        });
+
+        // 2) Update transaksi -> refunded + completedAt
+        batch.update(txRef, {
+          status: 'refunded',
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          rating: null,
+          refundedAt: admin.firestore.FieldValue.serverTimestamp(),
+          refundAmount: amount,
+          refundReason: 'Jastiper tidak merespon dalam 15 menit (auto-approved)',
+        });
+
+        // 3) Refund saldo ke buyer
+        if (buyerId && amount > 0) {
+          const buyerRef = admin.firestore().collection('users').doc(buyerId);
+          batch.update(buyerRef, {
+            saldo: admin.firestore.FieldValue.increment(amount),
+          });
+        }
+
+        // 4) Tambah refund_logs untuk audit trail
+        const refundLogRef = admin.firestore().collection('refund_logs').doc();
+        batch.set(refundLogRef, {
+          transactionId,
+          returnRequestId: requestId,
+          buyerId,
+          sellerId,
+          refundAmount: amount,
+          originalAmount: amount,
+          escrowAmount: escrowAmount || amount,
+          reason: 'Final approved return by system (seller no response)',
+          buyerReason: buyerReason,
+          sellerResponse: sellerResponse,
+          processedAt: admin.firestore.FieldValue.serverTimestamp(),
+          processedBy: 'cron',
+          type: 'return_refund',
+        });
+
+        await batch.commit();
+        done++;
+        console.log(`[CRON][RET] ✅ Auto-approved & refunded ${transactionId} (request ${requestId})`);
+
+      } catch (e) {
+        errors++;
+        console.error(`[CRON][RET] ❌ Gagal proses request ${requestId}:`, e.message);
+        // Opsional: log error ke collection
+        await admin.firestore().collection('auto_return_errors').add({
+          requestId,
+          transactionId,
+          error: e.message,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          retryable: true,
+        });
+      }
     }
+
+    console.log(`[CRON][RET] SUMMARY: ${done} approved+refunded, ${skipped} skipped, ${errors} errors`);
+
   } catch (error) {
     console.error('[CRON ERROR] Gagal proses retur otomatis:', error);
   }
 });
+
 
 // --- ENDPOINT BARU: Auto-remove expired cart items ---
 app.get("/cleanup-expired-cart-items", async (req, res) => {
