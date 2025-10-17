@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../app/providers/firebase_providers.dart';
+import '../../../notification/presentation/providers/notification_provider.dart';
 import '../../../post/domain/entities/post.dart';
 import '../../../post/presentation/providers/post_provider.dart';
 import '../../domain/entities/feed_filter.dart';
@@ -50,10 +51,33 @@ class FeedScreen extends ConsumerWidget {
           appBar: AppBar(
             title: const Text('Ngoper'),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.notifications_none),
-                onPressed: () {
-                  // TODO: Navigasi ke notifikasi
+              Consumer(
+                builder: (context, ref, _) {
+                  final unreadCount = ref.watch(unreadNotificationCountProvider).value ?? 0;
+
+                  return IconButton(
+                    icon: Stack(
+                      children: [
+                        const Icon(Icons.notifications_none),
+                        if (unreadCount > 0)
+                          Positioned(
+                            right: 0,
+                            top: 0,
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    onPressed: () {
+                      context.push('/notifications');
+                    },
+                  );
                 },
               ),
               IconButton(

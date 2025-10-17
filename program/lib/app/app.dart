@@ -43,6 +43,7 @@ import '../fitur/jualbeli/presentation/screens/request_history_screen.dart';
 import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_detail_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_history_screen.dart';
+import '../fitur/notification/presentation/screens/notification_screen.dart';
 import '../fitur/profile/presentation/screens/edit_profile_screen.dart';
 import '../fitur/profile/presentation/screens/history_screen.dart';
 import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
@@ -112,6 +113,10 @@ final goRouter = Provider<GoRouter>((ref) {
             groupName: groupName,
           );
         },
+      ),
+      GoRoute(
+        path: '/notifications',
+        builder: (context, state) => const NotificationScreen(),
       ),
 
 

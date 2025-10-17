@@ -341,6 +341,120 @@ app.post("/get100msToken", async (req, res) => {
   }
 });
 
+// ===== NOTIFIKASI PENGUMUMAN BROADCAST =====
+app.post("/send-announcement", async (req, res) => {
+  try {
+    const { title, body, imageUrl, senderId } = req.body;
+
+    if (!title || !body || !senderId) {
+      return res.status(400).json({ error: "Parameter tidak lengkap." });
+    }
+
+    // Ambil semua FCM token dari semua user
+    const usersSnapshot = await admin.firestore().collection('users').get();
+    const tokens = [];
+    const userNotifications = [];
+
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+      const fcmToken = userData.fcmToken;
+
+      if (fcmToken && userDoc.id !== senderId) { // Jangan kirim ke sender sendiri
+        tokens.push(fcmToken);
+
+        // Siapkan data untuk disimpan ke notifications collection setiap user
+        userNotifications.push({
+          userId: userDoc.id,
+          notificationData: {
+            title: title,
+            body: body,
+            imageUrl: imageUrl || null,
+            type: 'announcement',
+            senderId: senderId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            isRead: false,
+          }
+        });
+      }
+    }
+
+    if (tokens.length === 0) {
+      return res.status(404).json({ error: "Tidak ada penerima ditemukan." });
+    }
+
+    // Kirim notifikasi push ke semua device (batch)
+    const messages = tokens.map(token => ({
+      notification: {
+        title: title,
+        body: body,
+        ...(imageUrl && { image: imageUrl }), // Tambahkan gambar jika ada
+      },
+      android: {
+        notification: {
+          ...(imageUrl && { image: imageUrl }),
+          priority: 'high',
+          defaultSound: true,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+        ...(imageUrl && {
+          fcm_options: {
+            image: imageUrl,
+          },
+        }),
+      },
+      data: {
+        type: 'announcement',
+        title: title,
+        body: body,
+        ...(imageUrl && { imageUrl: imageUrl }),
+        senderId: senderId,
+      },
+      token: token,
+    }));
+
+    // Kirim notifikasi push menggunakan sendEach untuk batch processing
+    const response = await admin.messaging().sendEach(messages);
+
+    console.log(`[ANNOUNCEMENT] Berhasil kirim ke ${response.successCount}/${messages.length} device`);
+
+    // Simpan ke notifications collection setiap user (batch write)
+    const batch = admin.firestore().batch();
+
+    for (const userNotif of userNotifications) {
+      const notifRef = admin.firestore()
+        .collection('users')
+        .doc(userNotif.userId)
+        .collection('notifications')
+        .doc(); // Auto-generate ID
+
+      batch.set(notifRef, userNotif.notificationData);
+    }
+
+    await batch.commit();
+
+    console.log(`[ANNOUNCEMENT] Tersimpan ke ${userNotifications.length} user notifications`);
+
+    res.status(200).json({
+      success: true,
+      message: "Pengumuman berhasil dikirim",
+      sentTo: response.successCount,
+      totalRecipients: messages.length,
+      failedCount: response.failureCount,
+    });
+
+  } catch (error) {
+    console.error("Gagal mengirim pengumuman:", error);
+    res.status(500).json({ error: "Gagal mengirim pengumuman." });
+  }
+});
+
 app.post("/sendNotification", async (req, res) => {
   try {
     const { recipientId, senderName, messageText } = req.body;
@@ -366,19 +480,44 @@ app.post("/sendNotification", async (req, res) => {
         title: `Pesan baru dari ${senderName}`,
         body: messageText,
       },
+      data: {
+        type: 'chat',
+        senderName: senderName,
+        messageText: messageText,
+      },
       token: fcmToken,
     };
 
-    // 3. Kirim notifikasi menggunakan Firebase Admin SDK
+    // 3. Kirim notifikasi push
     await admin.messaging().send(payload);
-    console.log("Notifikasi berhasil dikirim ke:", fcmToken);
-    res.status(200).json({ success: true, message: "Notifikasi terkirim." });
+
+    // 4. ✅ BARU: Simpan ke notifications collection penerima
+    await admin.firestore()
+      .collection('users')
+      .doc(recipientId)
+      .collection('notifications')
+      .add({
+        title: `Pesan baru dari ${senderName}`,
+        body: messageText,
+        type: 'chat',
+        senderName: senderName,
+        data: {
+          messageText: messageText,
+        },
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        isRead: false,
+      });
+
+    console.log("Chat notification berhasil dikirim dan disimpan ke:", recipientId);
+    res.status(200).json({ success: true, message: "Notifikasi terkirim dan tersimpan." });
 
   } catch (error) {
     console.error("Gagal mengirim notifikasi:", error);
     res.status(500).json({ error: "Gagal mengirim notifikasi." });
   }
 });
+
+
 
 // 1. Endpoint untuk membuat invoice Xendit
 app.post("/create-invoice", async (req, res) => {

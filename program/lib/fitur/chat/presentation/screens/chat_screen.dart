@@ -599,9 +599,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && mounted) {
+      final chatRoomId = _generateChatRoomId(currentUser.uid, widget.otherUserId);
+
+      FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .collection('chat_read_status')
+          .doc(chatRoomId)
+          .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true))
+          .catchError((e) => print('Error marking as read: $e'));
+    }
+
     _messageController.dispose();
     super.dispose();
   }
+
+
+// TAMBAHKAN METHOD INI di dalam class _ChatScreenState
+  Future<void> _markChatAsRead(WidgetRef ref, String chatRoomId, String currentUserId) async {
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+      await firestore
+          .collection('users')
+          .doc(currentUserId)
+          .collection('chat_read_status')
+          .doc(chatRoomId)
+          .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+    } catch (e) {
+      print('Error marking chat as read: $e');
+    }
+  }
+
 
   Widget _buildAppBarTitle() {
     return Column(

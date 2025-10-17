@@ -16,6 +16,49 @@ class ChatListScreen extends ConsumerWidget {
     return userDoc.data()?['username'] ?? 'User tidak dikenal';
   }
 
+  Future<bool> _hasUnreadMessages(WidgetRef ref, String chatRoomId, String currentUserId) async {
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+
+      final lastReadRef = firestore
+          .collection('users')
+          .doc(currentUserId)
+          .collection('chat_read_status')
+          .doc(chatRoomId);
+
+      final lastReadDoc = await lastReadRef.get();
+      final lastReadTs = lastReadDoc.data()?['lastRead'] as Timestamp?;
+
+      if (lastReadTs == null) return true;
+
+      final q = await firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .where('timestamp', isGreaterThan: lastReadTs)
+          .limit(1)
+          .get();
+
+      // Hanya show unread jika ada pesan baru dari orang lain
+      if (q.docs.isEmpty) return false;
+      final first = q.docs.first.data();
+      return (first['senderId']?.toString() ?? '') != currentUserId;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _markChatAsRead(WidgetRef ref, String chatRoomId, String currentUserId) async {
+    final firestore = ref.read(firebaseFirestoreProvider);
+    await firestore
+        .collection('users')
+        .doc(currentUserId)
+        .collection('chat_read_status')
+        .doc(chatRoomId)
+        .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+  }
+
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chatRoomsAsync = ref.watch(chatRoomsStreamProvider);
@@ -58,22 +101,42 @@ class ChatListScreen extends ConsumerWidget {
                 final groupName = data['name']?.toString() ?? 'Group';
                 final members = List<String>.from(data['users'] ?? []);
 
-                return ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.group),
-                  ),
-                  title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: Text('${members.length} anggota',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  onTap: () {
-                    // ✅ FIX 2: Route ke group chat dengan chat room ID
-                    context.push('/group-chat/${chatRoom.id}', extra: {
-                      'groupName': groupName,
-                      'isGroup': true,
-                    });
+                return FutureBuilder<bool>(
+                  future: _hasUnreadMessages(ref, chatRoom.id, currentUserId!),
+                  builder: (context, unreadSnap) {
+                    final hasUnread = unreadSnap.data ?? false;
+
+                    return ListTile(
+                      leading: Stack(
+                        children: [
+                          const CircleAvatar(child: Icon(Icons.group)),
+                          if (hasUnread)
+                            Positioned(
+                              right: 0,
+                              top: 0,
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                              ),
+                            ),
+                        ],
+                      ),
+                      title: Text(groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: Text('${members.length} anggota',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      onTap: () {
+                        _markChatAsRead(ref, chatRoom.id, currentUserId!);
+                        context.push('/group-chat/${chatRoom.id}', extra: {
+                          'groupName': groupName,
+                          'isGroup': true,
+                        });
+                      },
+                    );
                   },
                 );
+
               } else {
                 // 1-ON-1 CHAT (existing code)
                 final users = List<String>.from(data['users'] as List? ?? []);
@@ -94,14 +157,36 @@ class ChatListScreen extends ConsumerWidget {
 
                     final otherUsername = snapshot.data ?? 'User tidak dikenal';
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(otherUsername.isNotEmpty ? otherUsername[0].toUpperCase() : '?'),
-                      ),
-                      title: Text(otherUsername, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      onTap: () {
-                        context.push('/chat/$otherUserId', extra: otherUsername);
+                    return FutureBuilder<bool>(
+                      future: _hasUnreadMessages(ref, chatRoom.id, currentUserId!),
+                      builder: (context, unreadSnap) {
+                        final hasUnread = unreadSnap.data ?? false;
+
+                        return ListTile(
+                          leading: Stack(
+                            children: [
+                              CircleAvatar(
+                                child: Text(otherUsername.isNotEmpty ? otherUsername[0].toUpperCase() : '?'),
+                              ),
+                              if (hasUnread)
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  child: Container(
+                                    width: 10,
+                                    height: 10,
+                                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          title: Text(otherUsername, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          onTap: () {
+                            _markChatAsRead(ref, chatRoom.id, currentUserId!);
+                            context.push('/chat/$otherUserId', extra: otherUsername);
+                          },
+                        );
                       },
                     );
                   },
