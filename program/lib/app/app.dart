@@ -15,11 +15,15 @@ import 'package:program/fitur/feed/presentation/screens/feed_screen.dart';
 import 'package:program/fitur/post/presentation/screens/create_post_screen.dart';
 import 'package:program/fitur/search_explore/presentation/screens/search_explore_screen.dart';
 import 'package:program/fitur/profile/presentation/screens/profile_screen.dart';
+
 import 'package:program/fitur/live_shopping/presentation/screens/setup_live_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/jastiper_live_screen.dart';
 import 'package:program/fitur/live_shopping/presentation/screens/viewer_live_screen.dart';
+
 import 'package:program/fitur/chat/presentation/screens/chat_list.dart';
 import 'package:program/fitur/chat/presentation/screens/chat_screen.dart';
+import 'package:program/fitur/chat/presentation/screens/group_chat_screen.dart';
+
 import 'package:program/fitur/post/presentation/screens/post_detail_screen.dart';
 import 'package:program/fitur/transaction/presentation/screens/topup_screen.dart';
 import 'package:program/fitur/transaction/presentation/screens/webview_screen.dart';
@@ -94,6 +98,23 @@ final goRouter = Provider<GoRouter>((ref) {
           );
         },
       ),
+      // Di router configuration (app_router.dart atau main.dart)
+      // Di router configuration
+      GoRoute(
+        path: '/group-chat/:chatId',
+        builder: (context, state) {
+          final chatId = state.pathParameters['chatId']!;
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final groupName = extra['groupName']?.toString() ?? 'Group';
+
+          return GroupChatScreen(
+            chatId: chatId,
+            groupName: groupName,
+          );
+        },
+      ),
+
+
       GoRoute(
         path: '/user/:userId', // Rute baru dengan parameter
         builder: (context, state) {

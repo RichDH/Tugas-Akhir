@@ -217,3 +217,70 @@ final otherUserActivePostsProvider = FutureProvider.family<List<Map<String, dyna
     return [];
   }
 });
+
+// Tambahan di chat_provider.dart
+// Provider untuk group messages stream
+final groupMessagesStreamProvider = StreamProvider.autoDispose.family<QuerySnapshot, String>((ref, chatId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+
+  return firestore
+      .collection('chats')
+      .doc(chatId)
+      .collection('messages')
+      .orderBy('timestamp', descending: true)
+      .snapshots()
+      .handleError((error) {
+    print('Group messages stream error: $error');
+    return Stream.fromIterable([]);
+  });
+});
+
+// Provider untuk group info
+final groupInfoStreamProvider = StreamProvider.autoDispose.family<DocumentSnapshot, String>((ref, chatId) {
+  final firestore = ref.watch(firebaseFirestoreProvider);
+
+  return firestore
+      .collection('chats')
+      .doc(chatId)
+      .snapshots()
+      .handleError((error) {
+    print('Group info stream error: $error');
+    return Stream.fromIterable([]);
+  });
+});
+
+// Method untuk send group message
+Future<void> sendGroupMessage(WidgetRef ref, String chatId, String text) async {
+  final firestore = ref.read(firebaseFirestoreProvider);
+  final currentUser = ref.read(firebaseAuthProvider).currentUser;
+
+  if (currentUser == null || text.trim().isEmpty) return;
+
+  try {
+    // Get current user data
+    final userDoc = await firestore.collection('users').doc(currentUser.uid).get();
+    final userData = userDoc.data() ?? {};
+    final username = userData['username']?.toString() ?? 'Unknown';
+
+    final chatRef = firestore.collection('chats').doc(chatId);
+
+    // Send message
+    await chatRef.collection('messages').add({
+      'senderId': currentUser.uid,
+      'senderName': username,
+      'text': text.trim(),
+      'timestamp': FieldValue.serverTimestamp(),
+      'messageType': 'text',
+    });
+
+    // Update last message
+    await chatRef.update({
+      'lastMessage': text.trim(),
+      'lastMessageTimestamp': FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    print("Error sending group message: $e");
+    rethrow;
+  }
+}
+

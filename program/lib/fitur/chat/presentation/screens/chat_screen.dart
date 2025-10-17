@@ -695,6 +695,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     final message = (data is Map<String, dynamic>) ? data : <String, dynamic>{};
                     final bool isMe = message['senderId']?.toString() == currentUser.uid;
 
+
+
                     // Handle offer messages
                     if (message['messageType']?.toString() == 'offer' && message['offerData'] != null) {
                       final offerData = message['offerData'];
