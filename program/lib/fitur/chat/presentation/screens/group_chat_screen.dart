@@ -5,6 +5,73 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 
+class Poll {
+  final String id;
+  final String question;
+  final List<String> options;
+  final Map<String, List<String>> votes; // optionIndex -> [userIds]
+  final String creatorId;
+  final DateTime createdAt;
+
+  Poll({
+    required this.id,
+    required this.question,
+    required this.options,
+    required this.votes,
+    required this.creatorId,
+    required this.createdAt,
+  });
+
+  factory Poll.fromMap(Map<String, dynamic> map) {
+    return Poll(
+      id: map['id'] ?? '',
+      question: map['question'] ?? '',
+      options: List<String>.from(map['options'] ?? []),
+      votes: Map<String, List<String>>.from(
+        (map['votes'] as Map<String, dynamic>? ?? {}).map(
+              (key, value) => MapEntry(key, List<String>.from(value ?? [])),
+        ),
+      ),
+      creatorId: map['creatorId'] ?? '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        map['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'question': question,
+      'options': options,
+      'votes': votes,
+      'creatorId': creatorId,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+    };
+  }
+
+  int getTotalVotes() {
+    return votes.values.fold(0, (sum, userIds) => sum + userIds.length);
+  }
+
+  int getVotesForOption(int optionIndex) {
+    return votes[optionIndex.toString()]?.length ?? 0;
+  }
+
+  bool hasUserVoted(String userId) {
+    return votes.values.any((userIds) => userIds.contains(userId));
+  }
+
+  String? getUserVotedOption(String userId) {
+    for (var entry in votes.entries) {
+      if (entry.value.contains(userId)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+}
+
 class GroupChatScreen extends ConsumerStatefulWidget {
   final String chatId;
   final String groupName;
@@ -116,7 +183,301 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
     }
   }
 
+  // Method untuk vote pada poll
+  Future<void> _voteOnPoll(String? messageId, int optionIndex) async {
+    if (messageId == null) return;
+
+    final firestore = ref.read(firebaseFirestoreProvider);
+    final currentUser = ref.read(firebaseAuthProvider).currentUser;
+
+    if (currentUser == null) return;
+
+    try {
+      final messageRef = firestore
+          .collection('chats')
+          .doc(widget.chatId)
+          .collection('messages')
+          .doc(messageId);
+
+      await firestore.runTransaction((transaction) async {
+        final messageDoc = await transaction.get(messageRef);
+        if (!messageDoc.exists) return;
+
+        final messageData = messageDoc.data() as Map<String, dynamic>;
+        final pollData = messageData['pollData'] as Map<String, dynamic>;
+        final votes = Map<String, List<String>>.from(
+          (pollData['votes'] as Map<String, dynamic>? ?? {}).map(
+                (key, value) => MapEntry(key, List<String>.from(value ?? [])),
+          ),
+        );
+
+        // Remove user from any previous votes
+        votes.forEach((key, userIds) {
+          userIds.remove(currentUser.uid);
+        });
+
+        // Add user to selected option
+        final optionKey = optionIndex.toString();
+        if (!votes.containsKey(optionKey)) {
+          votes[optionKey] = [];
+        }
+        votes[optionKey]!.add(currentUser.uid);
+
+        // Update the message with new votes
+        pollData['votes'] = votes;
+        transaction.update(messageRef, {
+          'pollData': pollData,
+        });
+      });
+    } catch (e) {
+      print('Error voting on poll: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal memberikan vote: $e')),
+      );
+    }
+  }
+
+// Method untuk show poll details
+  void _showPollDetails(Poll poll) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Vote Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              poll.question,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ...poll.options.asMap().entries.map((entry) {
+              final optionIndex = entry.key;
+              final optionText = entry.value;
+              final optionVotes = poll.getVotesForOption(optionIndex);
+              final totalVotes = poll.getTotalVotes();
+              final percentage = totalVotes > 0 ? (optionVotes / totalVotes * 100) : 0.0;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text(optionText)),
+                        Text('${percentage.toStringAsFixed(1)}%'),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    LinearProgressIndicator(
+                      value: percentage / 100,
+                      backgroundColor: Colors.grey.shade200,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade300),
+                    ),
+                    Text(
+                      '$optionVotes votes',
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+// Method untuk create poll (tambahkan setelah _sendMessage method)
+  Future<void> _createPoll(String question, List<String> options) async {
+    final firestore = ref.read(firebaseFirestoreProvider);
+    final currentUser = ref.read(firebaseAuthProvider).currentUser;
+
+    if (currentUser == null) return;
+
+    try {
+      // Get current user data untuk username
+      final userDoc = await firestore.collection('users').doc(currentUser.uid).get();
+      final userData = userDoc.data() ?? {};
+      final username = userData['username']?.toString() ?? 'Unknown';
+
+      final chatRef = firestore.collection('chats').doc(widget.chatId);
+      final messageId = firestore.collection('temp').doc().id; // Generate unique ID
+
+      // Create poll data
+      final poll = Poll(
+        id: messageId,
+        question: question,
+        options: options,
+        votes: {}, // Empty votes initially
+        creatorId: currentUser.uid,
+        createdAt: DateTime.now(),
+      );
+
+      // Send poll message to group
+      await chatRef.collection('messages').doc(messageId).set({
+        'messageId': messageId,
+        'senderId': currentUser.uid,
+        'senderName': username,
+        'text': 'Poll: $question',
+        'timestamp': FieldValue.serverTimestamp(),
+        'messageType': 'poll',
+        'pollData': poll.toMap(),
+      });
+
+      // Update last message di group document
+      await chatRef.update({
+        'lastMessage': 'Poll: $question',
+        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error creating poll: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat poll: $e')),
+      );
+    }
+  }
+
+// Method untuk show create poll dialog
+  void _showCreatePollDialog() {
+    final TextEditingController questionController = TextEditingController();
+    final List<TextEditingController> optionControllers = [
+      TextEditingController(),
+      TextEditingController(),
+    ];
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setState) {
+            return AlertDialog(
+              title: const Text('Create Poll'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: questionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Poll Question',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Poll Options',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 200,
+                      child: ListView.builder(
+                        itemCount: optionControllers.length,
+                        itemBuilder: (context, index) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: optionControllers[index],
+                                    decoration: InputDecoration(
+                                      labelText: 'Option ${index + 1}',
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                if (optionControllers.length > 2) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle, color: Colors.red),
+                                    onPressed: () {
+                                      setState(() {
+                                        optionControllers.removeAt(index);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (optionControllers.length < 5)
+                      TextButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            optionControllers.add(TextEditingController());
+                          });
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add Option'),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    final question = questionController.text.trim();
+                    final options = optionControllers
+                        .map((controller) => controller.text.trim())
+                        .where((text) => text.isNotEmpty)
+                        .toList();
+
+                    if (question.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Question is required')),
+                      );
+                      return;
+                    }
+
+                    if (options.length < 2) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('At least 2 options required')),
+                      );
+                      return;
+                    }
+
+                    await _createPoll(question, options);
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('Create'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+
   Widget _buildMessage(Map<String, dynamic> message, bool isMe) {
+    final messageType = message['messageType']?.toString() ?? 'text';
+
+    if (messageType == 'poll') {
+      return _buildPollMessage(message, isMe);
+    }
+
+    // Existing text message code (tidak diubah)
     final text = message['text']?.toString() ?? '';
     final senderName = message['senderName']?.toString() ?? 'Unknown';
 
@@ -150,6 +511,217 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
                 color: isMe ? Colors.white : Colors.black,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPollMessage(Map<String, dynamic> message, bool isMe) {
+    final pollData = message['pollData'] as Map<String, dynamic>? ?? {};
+    final senderName = message['senderName']?.toString() ?? 'Unknown';
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) return const SizedBox.shrink();
+
+    final poll = Poll.fromMap(pollData);
+    final hasVoted = poll.hasUserVoted(currentUser.uid);
+    final userVotedOption = poll.getUserVotedOption(currentUser.uid);
+    final totalVotes = poll.getTotalVotes();
+
+    return Align(
+      alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        padding: const EdgeInsets.all(12),
+        constraints: const BoxConstraints(maxWidth: 280),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.blue.shade50 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Sender name for group
+            if (!isMe) ...[
+              Text(
+                '~ $senderName',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+
+            // Poll question
+            Text(
+              poll.question,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Poll options
+            ...poll.options.asMap().entries.map((entry) {
+              final optionIndex = entry.key;
+              final optionText = entry.value;
+              final optionVotes = poll.getVotesForOption(optionIndex);
+              final percentage = totalVotes > 0 ? (optionVotes / totalVotes) : 0.0;
+              final isSelected = userVotedOption == optionIndex.toString();
+
+              return GestureDetector(
+                onTap: hasVoted ? null : () => _voteOnPoll(message['messageId'], optionIndex),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? Colors.green.shade100 : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isSelected ? Colors.green : Colors.grey.shade400,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // Checkbox/Circle indicator
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isSelected ? Colors.green : Colors.transparent,
+                          border: Border.all(
+                            color: isSelected ? Colors.green : Colors.grey.shade400,
+                            width: 2,
+                          ),
+                        ),
+                        child: isSelected
+                            ? const Icon(Icons.check, color: Colors.white, size: 14)
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Option text and percentage
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              optionText,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            if (hasVoted) ...[
+                              const SizedBox(height: 2),
+                              // Progress bar
+                              LinearProgressIndicator(
+                                value: percentage,
+                                backgroundColor: Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  isSelected ? Colors.green : Colors.blue.shade300,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Vote count and avatars
+                      if (hasVoted) ...[
+                        const SizedBox(width: 8),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // User avatars (max 3)
+                            if (optionVotes > 0) ...[
+                              SizedBox(
+                                width: optionVotes > 3 ? 60 : optionVotes * 20.0,
+                                height: 20,
+                                child: Stack(
+                                  children: poll.votes[optionIndex.toString()]
+                                      ?.take(3)
+                                      .toList()
+                                      .asMap()
+                                      .entries
+                                      .map((userEntry) {
+                                    final stackIndex = userEntry.key;
+                                    return Positioned(
+                                      left: stackIndex * 12.0,
+                                      child: Container(
+                                        width: 20,
+                                        height: 20,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: Colors.blue.shade300,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.person,
+                                            size: 12,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  })
+                                      .toList() ?? [],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              '$optionVotes',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+
+            // Total votes
+            if (hasVoted) ...[
+              const SizedBox(height: 8),
+              Text(
+                totalVotes == 1 ? '$totalVotes vote' : '$totalVotes votes',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+
+            // View votes button
+            if (hasVoted && totalVotes > 0) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => _showPollDetails(poll),
+                child: const Text(
+                  'View votes',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.green,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -244,10 +816,33 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
               },
             ),
           ),
+          // Update bagian Padding untuk input chat di build method
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
               children: [
+                // Plus button untuk poll (hanya untuk admin/creator)
+                StreamBuilder<DocumentSnapshot>(
+                  stream: _groupInfoStream,
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData || !snapshot.data!.exists) {
+                      return const SizedBox.shrink();
+                    }
+
+                    final data = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+                    final admins = List<String>.from(data['admins'] ?? []);
+                    final currentUser = FirebaseAuth.instance.currentUser;
+                    final isAdmin = currentUser != null && admins.contains(currentUser.uid);
+
+                    return isAdmin
+                        ? IconButton(
+                      icon: const Icon(Icons.add, color: Colors.blue),
+                      onPressed: _showCreatePollDialog,
+                      tooltip: 'Create Poll',
+                    )
+                        : const SizedBox.shrink();
+                  },
+                ),
                 Expanded(
                   child: TextField(
                     controller: _messageController,
@@ -339,6 +934,8 @@ class _GroupInfoDialogState extends ConsumerState<_GroupInfoDialog> {
       );
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
