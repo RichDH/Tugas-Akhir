@@ -1,4 +1,6 @@
 // File: program/lib/fitur/notification/domain/entities/notification_entity.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class NotificationEntity {
   final String id;
   final String title;
@@ -32,11 +34,22 @@ class NotificationEntity {
       imageUrl: map['imageUrl'],
       type: map['type'] ?? 'system',
       data: map['data'] as Map<String, dynamic>?,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt'] ?? 0),
+      createdAt: _parseTimestamp(map['createdAt']),
       isRead: map['isRead'] ?? false,
       senderId: map['senderId'],
       senderName: map['senderName'],
     );
+  }
+
+  static DateTime _parseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return DateTime.now();
+    if (timestamp is Timestamp) return timestamp.toDate();
+    if (timestamp is int) return DateTime.fromMillisecondsSinceEpoch(timestamp);
+    if (timestamp is String) {
+      final parsed = DateTime.tryParse(timestamp);
+      return parsed ?? DateTime.now();
+    }
+    return DateTime.now();
   }
 
   Map<String, dynamic> toMap() {

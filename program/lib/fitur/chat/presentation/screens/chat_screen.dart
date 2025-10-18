@@ -89,6 +89,7 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String? postId;
   final bool isOfferMode;
 
+
   const ChatScreen({
     super.key,
     required this.otherUserId,
@@ -105,11 +106,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   List<Post> _otherUserRequestPosts = []; // ✅ HANYA REQUEST POSTS
   bool _isLoadingPosts = false;
+  late final String _chatRoomId;
 
   @override
   void initState() {
     super.initState();
-    _loadOtherUserRequestPosts(); // ✅ LOAD HANYA REQUEST POSTS
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      _chatRoomId = _generateChatRoomId(currentUser.uid, widget.otherUserId);
+    }
+    _loadOtherUserRequestPosts();
   }
 
   String _generateChatRoomId(String currentUserId, String otherUserId) {
@@ -599,15 +605,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    // ✅ FIX: Mark as read sebelum dispose, tanpa ref
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null && mounted) {
-      final chatRoomId = _generateChatRoomId(currentUser.uid, widget.otherUserId);
-
       FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
           .collection('chat_read_status')
-          .doc(chatRoomId)
+          .doc(_chatRoomId)
           .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true))
           .catchError((e) => print('Error marking as read: $e'));
     }

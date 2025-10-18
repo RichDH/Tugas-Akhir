@@ -1,4 +1,4 @@
-// chat_list.dart - PERBAIKAN LENGKAP
+// chat_list.dart - PERBAIKAN LENGKAP REAL-TIME UNREAD
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +6,59 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/chat/presentation/providers/chat_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+// ✅ HELPER FUNCTION - GANTI KE STREAM REAL-TIME
+Stream<bool> _hasUnreadMessagesStream(WidgetRef ref, String chatRoomId, String currentUserId) {
+  final firestore = ref.read(firebaseFirestoreProvider);
+
+  // Stream dari chat_read_status untuk real-time updates
+  return firestore
+      .collection('users')
+      .doc(currentUserId)
+      .collection('chat_read_status')
+      .doc(chatRoomId)
+      .snapshots()
+      .asyncMap((lastReadDoc) async {
+    try {
+      final lastReadTs = lastReadDoc.data()?['lastRead'] as Timestamp?;
+
+      if (lastReadTs == null) return true; // Belum pernah baca
+
+      // Cek ada messages baru setelah lastRead
+      final q = await firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .where('timestamp', isGreaterThan: lastReadTs)
+          .where('senderId', isNotEqualTo: currentUserId)
+          .limit(1)
+          .get();
+
+      return q.docs.isNotEmpty;
+    } catch (e) {
+      print('Error checking unread: $e');
+      return false;
+    }
+  }).handleError((e) {
+    print('Stream error: $e');
+    return false;
+  });
+}
+
+// HELPER FUNCTION - SAMA SEPERTI SEBELUMNYA
+Future<void> _markChatAsRead(WidgetRef ref, String chatRoomId, String currentUserId) async {
+  try {
+    final firestore = ref.read(firebaseFirestoreProvider);
+    await firestore
+        .collection('users')
+        .doc(currentUserId)
+        .collection('chat_read_status')
+        .doc(chatRoomId)
+        .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+  } catch (e) {
+    print('Error marking as read: $e');
+  }
+}
 
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
@@ -16,49 +69,6 @@ class ChatListScreen extends ConsumerWidget {
     return userDoc.data()?['username'] ?? 'User tidak dikenal';
   }
 
-  Future<bool> _hasUnreadMessages(WidgetRef ref, String chatRoomId, String currentUserId) async {
-    try {
-      final firestore = ref.read(firebaseFirestoreProvider);
-
-      final lastReadRef = firestore
-          .collection('users')
-          .doc(currentUserId)
-          .collection('chat_read_status')
-          .doc(chatRoomId);
-
-      final lastReadDoc = await lastReadRef.get();
-      final lastReadTs = lastReadDoc.data()?['lastRead'] as Timestamp?;
-
-      if (lastReadTs == null) return true;
-
-      final q = await firestore
-          .collection('chats')
-          .doc(chatRoomId)
-          .collection('messages')
-          .where('timestamp', isGreaterThan: lastReadTs)
-          .limit(1)
-          .get();
-
-      // Hanya show unread jika ada pesan baru dari orang lain
-      if (q.docs.isEmpty) return false;
-      final first = q.docs.first.data();
-      return (first['senderId']?.toString() ?? '') != currentUserId;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<void> _markChatAsRead(WidgetRef ref, String chatRoomId, String currentUserId) async {
-    final firestore = ref.read(firebaseFirestoreProvider);
-    await firestore
-        .collection('users')
-        .doc(currentUserId)
-        .collection('chat_read_status')
-        .doc(chatRoomId)
-        .set({'lastRead': FieldValue.serverTimestamp()}, SetOptions(merge: true));
-  }
-
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chatRoomsAsync = ref.watch(chatRoomsStreamProvider);
@@ -66,12 +76,6 @@ class ChatListScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.of(context).pop(); // atau sesuaikan dengan navigasi Anda
-          },
-        ),
         title: const Text('Pesan'),
         actions: [
           IconButton(
@@ -92,17 +96,16 @@ class ChatListScreen extends ConsumerWidget {
               final chatRoom = snapshot.docs[index];
               final data = chatRoom.data() as Map<String, dynamic>;
 
-              // ✅ FIX 2: Deteksi tipe chat (group vs 1-on-1)
               final isGroup = data['type'] == 'group';
               final lastMessage = data['lastMessage'] as String? ?? '';
 
               if (isGroup) {
-                // GROUP CHAT
+                // ✅ GROUP CHAT dengan StreamBuilder
                 final groupName = data['name']?.toString() ?? 'Group';
                 final members = List<String>.from(data['users'] ?? []);
 
-                return FutureBuilder<bool>(
-                  future: _hasUnreadMessages(ref, chatRoom.id, currentUserId!),
+                return StreamBuilder<bool>(
+                  stream: _hasUnreadMessagesStream(ref, chatRoom.id, currentUserId!),
                   builder: (context, unreadSnap) {
                     final hasUnread = unreadSnap.data ?? false;
 
@@ -117,7 +120,10 @@ class ChatListScreen extends ConsumerWidget {
                               child: Container(
                                 width: 10,
                                 height: 10,
-                                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
                               ),
                             ),
                         ],
@@ -136,9 +142,8 @@ class ChatListScreen extends ConsumerWidget {
                     );
                   },
                 );
-
               } else {
-                // 1-ON-1 CHAT (existing code)
+                // ✅ 1-ON-1 CHAT dengan StreamBuilder
                 final users = List<String>.from(data['users'] as List? ?? []);
                 final otherUserId = users.firstWhere((id) => id != currentUserId, orElse: () => '');
 
@@ -150,15 +155,16 @@ class ChatListScreen extends ConsumerWidget {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return ListTile(
                         leading: const CircleAvatar(child: CircularProgressIndicator()),
-                        title: Text('Memuat...', style: TextStyle(fontWeight: FontWeight.bold)),
+                        title: const Text('Memuat...', style: TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
                       );
                     }
 
                     final otherUsername = snapshot.data ?? 'User tidak dikenal';
 
-                    return FutureBuilder<bool>(
-                      future: _hasUnreadMessages(ref, chatRoom.id, currentUserId!),
+                    // ✅ NESTED StreamBuilder untuk unread status
+                    return StreamBuilder<bool>(
+                      stream: _hasUnreadMessagesStream(ref, chatRoom.id, currentUserId!),
                       builder: (context, unreadSnap) {
                         final hasUnread = unreadSnap.data ?? false;
 
@@ -175,7 +181,10 @@ class ChatListScreen extends ConsumerWidget {
                                   child: Container(
                                     width: 10,
                                     height: 10,
-                                    decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
                                   ),
                                 ),
                             ],
@@ -201,7 +210,7 @@ class ChatListScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ FIX 2: Dialog pembuatan group dengan route yang benar
+  // ✅ DIALOG CREATE GROUP - TIDAK BERUBAH, TETAP SAMA
   void _showCreateGroupDialog(BuildContext context, WidgetRef ref) {
     final TextEditingController nameController = TextEditingController();
     final firestore = ref.read(firebaseFirestoreProvider);
@@ -214,14 +223,12 @@ class ChatListScreen extends ConsumerWidget {
       return;
     }
 
-    // Stream followers milik current user
     final followersStream = firestore
         .collection('users')
         .doc(currentUser.uid)
         .collection('followers')
         .snapshots();
 
-    // State lokal untuk pilihan anggota
     final Set<String> selectedMemberIds = <String>{};
 
     showDialog(
@@ -253,7 +260,7 @@ class ChatListScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     SizedBox(
-                      height: 260, // scrollable box
+                      height: 260,
                       child: StreamBuilder<QuerySnapshot>(
                         stream: followersStream,
                         builder: (context, snap) {
@@ -265,9 +272,8 @@ class ChatListScreen extends ConsumerWidget {
                           }
 
                           final followerIds = snap.data!.docs.map((d) => d.id).toList();
-
-                          // ✅ BATASI whereIn max 10, jika > 10 perlu batching
                           final idsToQuery = followerIds.take(10).toList();
+
                           if (idsToQuery.isEmpty) {
                             return const Center(child: Text('Belum ada followers'));
                           }
@@ -338,7 +344,6 @@ class ChatListScreen extends ConsumerWidget {
                     }
 
                     try {
-                      // Buat dokumen chat group
                       final members = <String>{...selectedMemberIds, currentUser.uid}.toList();
                       final admins = <String>[currentUser.uid];
 
@@ -354,7 +359,6 @@ class ChatListScreen extends ConsumerWidget {
 
                       if (context.mounted) {
                         Navigator.pop(ctx);
-                        // ✅ FIX 2: Route ke group chat dengan ID yang benar
                         context.push('/group-chat/${chatDoc.id}', extra: {
                           'groupName': name,
                           'isGroup': true,

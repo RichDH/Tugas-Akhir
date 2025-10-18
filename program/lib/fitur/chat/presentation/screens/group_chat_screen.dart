@@ -730,6 +730,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen> {
 
   @override
   void dispose() {
+    // ✅ FIX: Mark as read tanpa ref
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null && mounted) {
       FirebaseFirestore.instance
