@@ -35,9 +35,12 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
+import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
+import '../fitur/admin/presentation/screens/chat/admin_chat_screen.dart';
 import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
 import '../fitur/admin/presentation/screens/return_review_screen.dart';
 import '../fitur/cart/presentation/screens/cart_screen.dart';
+import '../fitur/chat/presentation/screens/chat_admin_screen.dart';
 import '../fitur/jualbeli/presentation/screens/create_return_request_screen.dart';
 import '../fitur/jualbeli/presentation/screens/request_history_screen.dart';
 import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
@@ -118,6 +121,10 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/notifications',
         builder: (context, state) => const NotificationScreen(),
       ),
+      GoRoute(
+        path: '/chat-admin',
+        builder: (context, state) => const ChatAdminScreen(), // Buat di langkah 3
+      ),
 
 
       GoRoute(
@@ -179,8 +186,26 @@ final goRouter = Provider<GoRouter>((ref) {
         builder: (context, state) => const ReturnReviewScreen(),
       ),
       GoRoute(path: '/list-interested-order', builder: (context, state) => const ListInterestedOrderScreen()),
-      GoRoute(path: '/admin/return-finalize', builder: (context, state) => const ReturnFinalizeScreen()), // ✅ TAMBAHKAN INI
+
+
+      GoRoute(path: '/admin/return-finalize', builder: (context, state) => const ReturnFinalizeScreen()),
       GoRoute(path: '/admin/return-review', builder: (context, state) => const ReturnReviewScreen()),
+      GoRoute(
+        path: '/admin/chats',
+        builder: (context, state) => const AdminChatListScreen(), // Buat langkah 6
+      ),
+      GoRoute(
+        path: '/admin/chats/:roomId',
+        builder: (context, state) {
+          final roomId = state.pathParameters['roomId']!;
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final otherName = extra['name']?.toString() ?? 'Pengguna';
+          return AdminChatScreen(roomId: roomId, otherName: otherName);
+        },
+      ),
+
+
+
       GoRoute(path: '/return-response-list', builder: (context, state) => const ReturnResponseListScreen()),
       GoRoute(path: '/return-response/:requestId', builder: (context, state) => ReturnResponseScreen(requestId: state.pathParameters['requestId']!)),
       GoRoute(path: '/return-confirmation/:transactionId', builder: (context, state) => ReturnConfirmationScreen(transactionId: state.pathParameters['transactionId']!)),

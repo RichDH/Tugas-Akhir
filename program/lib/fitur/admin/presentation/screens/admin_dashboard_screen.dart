@@ -23,7 +23,6 @@ class AdminDashboardScreen extends ConsumerWidget { // Ubah menjadi ConsumerWidg
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
           children: [
-            // PERBAIKAN: Buat kartu "Verifikasi Pending" menjadi dinamis
             verificationsAsync.when(
               data: (snapshot) => _DashboardCard(
                 title: 'Verifikasi Pending',

@@ -121,7 +121,13 @@ class ProfileScreen extends ConsumerWidget {
                             title: Text('Verifikasi Akun'),
                           ),
                         ),
-
+                      const PopupMenuItem<String>(
+                        value: 'chat-admin',
+                        child: ListTile(
+                          leading: Icon(Icons.support_agent, color: Colors.blue),
+                          title: Text('Chat Admin'),
+                        ),
+                      ),
                       const PopupMenuDivider(),
 
                       // ✅ BUSINESS SECTION - TAMBAHAN BARU
@@ -214,7 +220,6 @@ class ProfileScreen extends ConsumerWidget {
                     ];
                   },
                   onSelected: (value) {
-                    // ✅ HANDLE NAVIGATION - TAMBAHKAN CASE BARU
                     switch (value) {
                       case 'topup':
                         context.push('/top-up');
@@ -222,7 +227,10 @@ class ProfileScreen extends ConsumerWidget {
                       case 'verification':
                         context.push('/verification');
                         break;
-                      case 'list-interested-order': // ✅ CASE BARU
+                      case 'chat-admin':
+                        context.push('/chat-admin');
+                        break;
+                      case 'list-interested-order':
                         context.push('/list-interested-order');
                         break;
                       case 'cart':

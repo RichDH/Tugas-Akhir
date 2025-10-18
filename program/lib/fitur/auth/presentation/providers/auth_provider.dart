@@ -192,7 +192,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 final isAdminProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateChangesProvider);
   final user = authState.value;
-  return user?.email == 'admin@.com';
+  return user?.email == 'admin@gmail.com';
 });
 
 // Provider untuk AuthNotifier

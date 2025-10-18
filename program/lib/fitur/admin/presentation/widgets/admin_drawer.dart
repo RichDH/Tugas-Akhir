@@ -33,6 +33,13 @@ class AdminDrawer extends ConsumerWidget {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('Chat Pengguna'),
+            onTap: () {
+              context.go('/admin/chats');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.verified_user_outlined),
             title: const Text('Verifikasi Pengguna'),
             onTap: () {
