@@ -260,6 +260,9 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
   }
 
   // FUNGSI YANG DIPERBAIKI: Join room dengan session ID tracking
+  // PERBAIKAN DI live_shopping_provider.dart
+// Ganti fungsi joinRoom yang ada dengan yang ini:
+
   Future<void> joinRoom({
     required String roomId,
     required String userId,
@@ -276,7 +279,6 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
       return;
     }
 
-    // Set session ID untuk tracking (untuk broadcaster gunakan userId, untuk viewer gunakan roomId)
     final sessionId = role == 'broadcaster' ? userId : roomId;
 
     state = state.copyWith(
@@ -292,25 +294,16 @@ class LiveShoppingNotifier extends StateNotifier<LiveShoppingState>
     );
 
     try {
-      // Ensure HMS SDK is ready
       if (_hmsSDK == null) {
         await _initializeHMSSDK();
       }
 
-      // Handle broadcaster specific setup
-      if (role == 'broadcaster') {
-        debugPrint("Setting up Firestore for broadcaster...");
-        await _firestore.collection('live_sessions').doc(userId).set({
-          'hostId': userId,
-          'hostName': username,
-          'roomId': roomId,
-          'title': liveTitle ?? 'Live Shopping',
-          'status': 'ongoing',
-          'itemPrice': initialPrice ?? 0.0,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        debugPrint("Firestore setup completed");
-      }
+      // PERBAIKAN: HAPUS duplikasi Firestore setup untuk broadcaster
+      // Karena sudah dilakukan di setup_live_screen sebelum joinRoom dipanggil
+      // TIDAK PERLU LAGI kode ini:
+      // if (role == 'broadcaster') {
+      //   await _firestore.collection('live_sessions').doc(userId).set({...});
+      // }
 
       // Get token and join
       debugPrint("Getting 100ms token...");

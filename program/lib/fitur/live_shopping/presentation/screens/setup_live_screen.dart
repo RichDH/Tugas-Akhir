@@ -251,7 +251,6 @@ class _SetupLiveScreenState extends ConsumerState<SetupLiveScreen> {
                       )
                           : ElevatedButton.icon(
                         onPressed: () async {
-                          // Prevent multiple presses
                           if (_isCreatingRoom || liveState.isJoining || liveState.isLoading) {
                             debugPrint("Button press ignored - already in progress");
                             return;
@@ -279,6 +278,23 @@ class _SetupLiveScreenState extends ConsumerState<SetupLiveScreen> {
                                 .doc(user.uid)
                                 .get();
                             final username = userDoc.data()?['username'] as String? ?? 'Jastiper Tanpa Nama';
+
+                            // PERBAIKAN: Simpan ke Firestore SEBELUM join
+                            // Gunakan kombinasi document ID yang unik tapi bisa dicari
+                            debugPrint("Saving live session to Firestore...");
+                            await FirebaseFirestore.instance
+                                .collection('live_sessions')
+                                .doc(user.uid) // Document ID tetap userId untuk mudah cleanup
+                                .set({
+                              'hostId': user.uid,          // UID Firebase user (untuk transaksi & chat)
+                              'hostName': username,         // Nama jastiper
+                              'roomId': newRoomId,         // Room ID dari 100ms (untuk query)
+                              'title': title,              // Judul live
+                              'status': 'ongoing',         // Status live
+                              'itemPrice': price,          // Harga awal
+                              'createdAt': FieldValue.serverTimestamp(),
+                            });
+                            debugPrint("Firestore setup completed");
 
                             debugPrint("Attempting to join room as broadcaster...");
 
