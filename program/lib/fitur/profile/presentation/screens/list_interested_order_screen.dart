@@ -170,6 +170,7 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
     final String buyerId = data['buyerId'] ?? '';
     final Timestamp? createdAt = data['createdAt'];
     final String buyerAddress = data['buyerAddress'] ?? 'Alamat tidak tersedia';
+    final String? liveDesc = data['liveDescription'] as String?;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -257,8 +258,41 @@ class _ListInterestedOrderScreenState extends ConsumerState<ListInterestedOrderS
                     ),
                   ],
                 ),
+              const SizedBox(height: 8),
+              if (liveDesc != null && liveDesc.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Keterangan Pembelian (Live):',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        liveDesc,
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 8),
+
+
 
               // ✅ BUYER ADDRESS
               Container(

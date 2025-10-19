@@ -1,7 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hmssdk_flutter/hmssdk_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:program/fitur/live_shopping/presentation/providers/live_shopping_provider.dart';
 import 'package:program/fitur/live_shopping/presentation/widgets/live_chat_widgets.dart';
 
@@ -102,22 +105,125 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
                   try {
-                    await ref.read(liveShoppingProvider.notifier).placeOrder(
-                      sessionId: hostPeer.peerId,
-                      itemName: itemNameController.text,
-                      description: descriptionController.text,
-                      quantity: int.parse(qtyController.text),
-                      price: price,
-                    );
+                    final liveState = ref.read(liveShoppingProvider);
+                    final price = liveState.currentItemPrice;
+                    final hostPeer = ref.read(liveShoppingProvider).hostPeer;
+                    final hostId = hostPeer?.peerId;
+                    if (hostPeer == null) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Data Jastiper tidak ditemukan.")),
+                        );
+                      }
+                      return;
+                    }
+
+                    final qty = int.parse(qtyController.text);
+                    final totalAmount = price * qty;
+
+                    // Cek login user
+                    final user = FirebaseAuth.instance.currentUser;
+                    if (user == null) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Anda harus login terlebih dahulu.")),
+                        );
+                      }
+                      return;
+                    }
+
+                    final userDoc = await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .get();
+
+                    final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
+
+                    if (userBalance < totalAmount) {
+                      // pakai dialog yang sudah ada di file ini
+                      _showInsufficientBalanceDialog(totalAmount, userBalance);
+                      return;
+                    }
+
+                    // Potong saldo user (escrow)
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .update({
+                      'saldo': FieldValue.increment(-totalAmount),
+                    });
+
+                    // ✅ AMBIL UID JASTIPER ASLI dari live session (PERBAIKAN QUERY)
+                    final liveSessionQuery = await FirebaseFirestore.instance
+                        .collection('live_sessions')
+                        .where('roomId', isEqualTo: hostPeer.peerId) // query by roomId field
+                        .limit(1)
+                        .get();
+
+                    if (liveSessionQuery.docs.isEmpty) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Sesi live tidak ditemukan di database.")),
+                        );
+                      }
+                      return;
+                    }
+
+                    final liveDoc = liveSessionQuery.docs.first;
+                    final actualJastiperUid = liveDoc.data()['hostId'] as String?;
+                    final jastiperName = liveDoc.data()['hostName'] as String? ?? hostPeer.name;
+
+                    if (actualJastiperUid == null) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Data jastiper tidak valid.")),
+                        );
+                      }
+                      return;
+                    }
+
+// Buat transaksi dengan sellerId yang benar
+                    await FirebaseFirestore.instance.collection('transactions').add({
+                      'postId': hostPeer.peerId, // roomId sebagai identifier sumber transaksi
+                      'buyerId': user.uid,
+                      'sellerId': actualJastiperUid, // ✅ Firebase UID jastiper asli
+                      'amount': totalAmount,
+                      'status': 'pending',
+                      'createdAt': FieldValue.serverTimestamp(),
+                      'buyerAddress': (userDoc.data()?['alamat'] as String?)?.trim().isNotEmpty == true
+                          ? (userDoc.data()?['alamat'] as String).trim()
+                          : 'Alamat tidak tersedia',
+                      'items': [
+                        {
+                          'postId': hostPeer.peerId,
+                          'title': itemNameController.text.trim(),
+                          'price': price,
+                          'quantity': qty,
+                          'imageUrl': '',
+                        }
+                      ],
+                      'isEscrow': true,
+                      'escrowAmount': totalAmount,
+                      'isAcceptedBySeller': false,
+                      'type': 'live_buy',
+                      'liveDescription': descriptionController.text.trim(),
+                      'liveMeta': {
+                        'hostName': jastiperName,
+                        'roomId': hostPeer.peerId,
+                        'unitPrice': price,
+                        'source': 'live_shopping',
+                      },
+                    });
+
 
                     if (mounted) {
-                      Navigator.of(ctx).pop(); // Tutup form
-                      _showSuccessDialog(context); // Tampilkan dialog sukses
+                      Navigator.of(ctx).pop(); // tutup form
+                      _showSuccessDialog(context); // tampilkan success overlay 3 detik
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(e.toString())),
+                        SnackBar(content: Text('Gagal membuat transaksi: $e')),
                       );
                     }
                   }
@@ -127,6 +233,52 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
           ],
         );
       },
+    );
+  }
+
+  void _showInsufficientBalanceDialog(double totalAmount, double userBalance) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Saldo Tidak Mencukupi'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_balance_wallet,
+              size: 64,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Saldo Anda: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(userBalance)}',
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              'Total yang dibutuhkan: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Kurang: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount - userBalance)}',
+              style: const TextStyle(fontSize: 16, color: Colors.red),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.push('/top-up');
+            },
+            child: const Text('Top Up'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -196,12 +348,73 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
               ListTile(
                 leading: const Icon(Icons.chat_bubble_outline),
                 title: Text("Kirim Pesan ke $hostName"),
-                onTap: () {
-                  // Navigasi langsung ke halaman chat pribadi dengan Jastiper
+                onTap: () async {
                   Navigator.of(ctx).pop();
-                  context.push('/chat/$hostId', extra: hostName);
+
+                  final currentUser = FirebaseAuth.instance.currentUser;
+                  if (currentUser == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Anda harus login untuk chat')),
+                    );
+                    return;
+                  }
+
+                  try {
+                    // ✅ PERBAIKAN: Query berdasarkan roomId field, bukan document ID
+                    final liveSessionQuery = await FirebaseFirestore.instance
+                        .collection('live_sessions')
+                        .where('roomId', isEqualTo: hostId) // hostId = hostPeer.peerId = roomId
+                        .limit(1)
+                        .get();
+
+                    if (liveSessionQuery.docs.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Sesi live tidak ditemukan')),
+                      );
+                      return;
+                    }
+
+                    final liveDoc = liveSessionQuery.docs.first;
+                    final actualJastiperUid = liveDoc.data()['hostId'] as String?;
+                    final jastiperName = liveDoc.data()['hostName'] as String? ?? hostName;
+
+                    if (actualJastiperUid == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Data jastiper tidak ditemukan')),
+                      );
+                      return;
+                    }
+
+                    // Buat room ID deterministik
+                    final users = [currentUser.uid, actualJastiperUid]..sort();
+                    final roomId = users.join('_');
+
+                    // Cek/buat chat room
+                    final roomDoc = await FirebaseFirestore.instance
+                        .collection('chats')
+                        .doc(roomId)
+                        .get();
+
+                    if (!roomDoc.exists) {
+                      await FirebaseFirestore.instance.collection('chats').doc(roomId).set({
+                        'type': 'direct',
+                        'users': [currentUser.uid, actualJastiperUid],
+                        'createdAt': FieldValue.serverTimestamp(),
+                        'lastMessage': '',
+                        'lastMessageTimestamp': FieldValue.serverTimestamp(),
+                      });
+                    }
+
+                    context.push('/chat/$actualJastiperUid', extra: jastiperName);
+
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $e')),
+                    );
+                  }
                 },
               ),
+
             ],
           ),
         );

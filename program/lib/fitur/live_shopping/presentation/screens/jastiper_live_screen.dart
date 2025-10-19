@@ -5,7 +5,11 @@ import 'package:hmssdk_flutter/hmssdk_flutter.dart';
 import 'package:program/fitur/live_shopping/presentation/providers/live_shopping_provider.dart';
 import 'package:program/fitur/live_shopping/presentation/widgets/live_chat_widgets.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:program/fitur/live_shopping/presentation/widgets/live_botton_panel.dart';
+import 'package:program/fitur/profile/presentation/screens/list_interested_order_screen.dart';
 import 'package:flutter/foundation.dart';
+
+import '../../../chat/presentation/screens/chat_list.dart';
 
 class JastiperLiveScreen extends ConsumerStatefulWidget {
   const JastiperLiveScreen({super.key});
@@ -42,6 +46,8 @@ class _JastiperLiveScreenState extends ConsumerState<JastiperLiveScreen>
       _performCleanupOnly();
     }
   }
+
+
 
   // FUNGSI BARU: Cleanup tanpa navigation (untuk app termination)
   void _performCleanupOnly() async {
@@ -236,45 +242,90 @@ class _JastiperLiveScreenState extends ConsumerState<JastiperLiveScreen>
                   Expanded(
                     child: TabBarView(
                       children: [
-                        // Tab 1: Pesanan Masuk
-                        if (jastiperId != null)
-                          Consumer(
-                            builder: (context, ref, child) {
-                              final ordersAsync = ref.watch(liveOrdersStreamProvider(jastiperId));
-                              return ordersAsync.when(
-                                data: (snapshot) {
-                                  if (snapshot.docs.isEmpty) {
-                                    return const Center(child: Text("Belum ada pesanan masuk."));
-                                  }
-                                  return ListView.builder(
-                                    itemCount: snapshot.docs.length,
-                                    itemBuilder: (context, index) {
-                                      final orderDoc = snapshot.docs[index];
-                                      final order = orderDoc.data() as Map<String, dynamic>;
-                                      return Card(
-                                        child: ListTile(
-                                          title: Text(order['itemName'] ?? 'Barang'),
-                                          subtitle: Text('oleh ${order['buyerName'] ?? 'Anonim'} (Qty: ${order['quantity']})'),
-                                          trailing: const Icon(Icons.chevron_right),
-                                          onTap: () {
-                                            _showOrderDetailDialog(context, ref, jastiperId, orderDoc.id, order);
-                                          },
-                                        ),
-                                      );
-                                    },
-                                  );
-                                },
-                                loading: () => const Center(child: CircularProgressIndicator()),
-                                error: (e, s) => const Center(child: Text("Gagal memuat pesanan.")),
-                              );
-                            },
-                          )
-                        else
-                          const Center(child: Text("Tidak dapat memuat pesanan.")),
-
-                        // Tab 2: Pesan Pribadi (Placeholder)
-                        const Center(
-                          child: Text("Fitur Pesan Pribadi akan segera hadir.", style: TextStyle(color: Colors.grey)),
+                    Container(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.shopping_bag, color: Colors.green, size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'Pesanan Masuk',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: const ListInterestedOrderScreen(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                        // Tab 2: Chat List
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            children: [
+                              // Header Chat
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  children: [
+                                    Icon(Icons.chat_bubble, color: Colors.blue, size: 20),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Pesan Anda',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              // ChatListScreen dalam Container dengan tinggi terbatas
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.grey.shade300),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: const ChatListScreen(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
 
                         // Tab 3: Pengaturan Live
