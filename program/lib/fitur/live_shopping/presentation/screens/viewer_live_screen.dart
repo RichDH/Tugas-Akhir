@@ -20,8 +20,84 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
   bool _hasShownEndDialog = false;
   bool _isNavigating = false; // TAMBAHAN: Flag untuk mencegah multiple navigation
 
+  // ✅ PERBAIKAN SEDERHANA: Fungsi untuk mendapatkan data jastiper dengan benar
+  Future<Map<String, String?>> _getJastiperData() async {
+    try {
+      final liveState = ref.read(liveShoppingProvider);
+      final roomId = liveState.roomId; // Ambil roomId dari state provider
+
+      debugPrint("=== GETTING JASTIPER DATA ===");
+      debugPrint("Room ID dari state: $roomId");
+
+      if (roomId == null) {
+        debugPrint("❌ Room ID tidak ditemukan di state");
+        return {'uid': null, 'name': null};
+      }
+
+      // ✅ STRATEGI 1: Query berdasarkan roomId field di Firestore
+      final liveSessionQuery = await FirebaseFirestore.instance
+          .collection('live_sessions')
+          .where('roomId', isEqualTo: roomId)
+          .where('status', isEqualTo: 'ongoing')
+          .limit(1)
+          .get();
+
+      if (liveSessionQuery.docs.isNotEmpty) {
+        final liveDoc = liveSessionQuery.docs.first;
+        final jastiperUid = liveDoc.data()['hostId'] as String?;
+        final jastiperName = liveDoc.data()['hostName'] as String?;
+
+        debugPrint("✅ BERHASIL - Query berdasarkan roomId field");
+        debugPrint("Jastiper UID: $jastiperUid");
+        debugPrint("Jastiper Name: $jastiperName");
+
+        return {
+          'uid': jastiperUid,
+          'name': jastiperName,
+        };
+      }
+
+      // ✅ STRATEGI 2: Jika tidak ditemukan, coba query semua live sessions ongoing
+      debugPrint("❌ Tidak ditemukan via roomId query, mencoba strategi alternatif...");
+
+      final allLiveQuery = await FirebaseFirestore.instance
+          .collection('live_sessions')
+          .where('status', isEqualTo: 'ongoing')
+          .get();
+
+      debugPrint("Ditemukan ${allLiveQuery.docs.length} live sessions ongoing");
+
+      for (var doc in allLiveQuery.docs) {
+        final data = doc.data();
+        final docRoomId = data['roomId'] as String?;
+
+        debugPrint("Checking doc ${doc.id}: roomId = $docRoomId");
+
+        if (docRoomId == roomId) {
+          final jastiperUid = data['hostId'] as String?;
+          final jastiperName = data['hostName'] as String?;
+
+          debugPrint("✅ BERHASIL - Ditemukan via scan dokumen");
+          debugPrint("Jastiper UID: $jastiperUid");
+
+          return {
+            'uid': jastiperUid,
+            'name': jastiperName,
+          };
+        }
+      }
+
+      debugPrint("❌ Jastiper data tidak ditemukan di semua strategi");
+      return {'uid': null, 'name': null};
+
+    } catch (e) {
+      debugPrint("❌ ERROR saat mengambil data jastiper: $e");
+      return {'uid': null, 'name': null};
+    }
+  }
+
   // Fungsi untuk menampilkan form pembelian
-  void _showPurchaseForm(BuildContext context, WidgetRef ref) {
+  void _showPurchaseForm(BuildContext context, WidgetRef ref) async {
     final liveState = ref.read(liveShoppingProvider);
     final price = liveState.currentItemPrice;
     final hostPeer = liveState.hostPeer;
@@ -44,22 +120,59 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
       return;
     }
 
+    // ✅ PERBAIKAN: Gunakan fungsi yang sudah diperbaiki
+    final jastiperData = await _getJastiperData();
+    final jastiperUid = jastiperData['uid'];
+    final jastiperName = jastiperData['name'];
+
+    if (jastiperUid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Data jastiper tidak ditemukan. Silakan coba lagi.")),
+        );
+      }
+      return;
+    }
+
     final itemNameController = TextEditingController();
     final descriptionController = TextEditingController();
     final qtyController = TextEditingController(text: '1');
     final formKey = GlobalKey<FormState>();
 
+    if (!mounted) return;
+
     showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text("Form Pembelian"),
+          title: Text("Beli dari ${jastiperName ?? 'Jastiper'}"),
           content: Form(
             key: formKey,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Info jastiper
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person, size: 16, color: Colors.blue),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Jastiper: ${jastiperName ?? 'Unknown'}",
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   TextFormField(
                     controller: itemNameController,
                     decoration: const InputDecoration(
@@ -105,19 +218,6 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
                   try {
-                    final liveState = ref.read(liveShoppingProvider);
-                    final price = liveState.currentItemPrice;
-                    final hostPeer = ref.read(liveShoppingProvider).hostPeer;
-                    final hostId = hostPeer?.peerId;
-                    if (hostPeer == null) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Data Jastiper tidak ditemukan.")),
-                        );
-                      }
-                      return;
-                    }
-
                     final qty = int.parse(qtyController.text);
                     final totalAmount = price * qty;
 
@@ -140,7 +240,7 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                     final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
                     if (userBalance < totalAmount) {
-                      // pakai dialog yang sudah ada di file ini
+                      Navigator.of(ctx).pop(); // Tutup form dulu
                       _showInsufficientBalanceDialog(totalAmount, userBalance);
                       return;
                     }
@@ -153,40 +253,11 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                       'saldo': FieldValue.increment(-totalAmount),
                     });
 
-                    // ✅ AMBIL UID JASTIPER ASLI dari live session (PERBAIKAN QUERY)
-                    final liveSessionQuery = await FirebaseFirestore.instance
-                        .collection('live_sessions')
-                        .where('roomId', isEqualTo: hostPeer.peerId) // query by roomId field
-                        .limit(1)
-                        .get();
-
-                    if (liveSessionQuery.docs.isEmpty) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Sesi live tidak ditemukan di database.")),
-                        );
-                      }
-                      return;
-                    }
-
-                    final liveDoc = liveSessionQuery.docs.first;
-                    final actualJastiperUid = liveDoc.data()['hostId'] as String?;
-                    final jastiperName = liveDoc.data()['hostName'] as String? ?? hostPeer.name;
-
-                    if (actualJastiperUid == null) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Data jastiper tidak valid.")),
-                        );
-                      }
-                      return;
-                    }
-
-// Buat transaksi dengan sellerId yang benar
+                    // ✅ Buat transaksi dengan data jastiper yang sudah dipastikan benar
                     await FirebaseFirestore.instance.collection('transactions').add({
-                      'postId': hostPeer.peerId, // roomId sebagai identifier sumber transaksi
+                      'postId': liveState.roomId, // roomId sebagai identifier sumber transaksi
                       'buyerId': user.uid,
-                      'sellerId': actualJastiperUid, // ✅ Firebase UID jastiper asli
+                      'sellerId': jastiperUid, // ✅ UID jastiper yang sudah dipastikan benar
                       'amount': totalAmount,
                       'status': 'pending',
                       'createdAt': FieldValue.serverTimestamp(),
@@ -195,7 +266,7 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                           : 'Alamat tidak tersedia',
                       'items': [
                         {
-                          'postId': hostPeer.peerId,
+                          'postId': liveState.roomId,
                           'title': itemNameController.text.trim(),
                           'price': price,
                           'quantity': qty,
@@ -209,12 +280,11 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                       'liveDescription': descriptionController.text.trim(),
                       'liveMeta': {
                         'hostName': jastiperName,
-                        'roomId': hostPeer.peerId,
+                        'roomId': liveState.roomId,
                         'unitPrice': price,
                         'source': 'live_shopping',
                       },
                     });
-
 
                     if (mounted) {
                       Navigator.of(ctx).pop(); // tutup form
@@ -310,8 +380,8 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
     });
   }
 
-  // Fungsi untuk menampilkan panel aksi penonton (dikembalikan ke bentuk asli)
-  void _showViewerActionPanel(BuildContext context, WidgetRef ref) {
+  // ✅ PERBAIKAN: Fungsi untuk menampilkan panel aksi penonton
+  void _showViewerActionPanel(BuildContext context, WidgetRef ref) async {
     final hostPeer = ref.read(liveShoppingProvider).hostPeer;
     if (hostPeer == null) {
       if (mounted) {
@@ -322,8 +392,21 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
       return;
     }
 
-    final hostId = hostPeer.peerId;
-    final hostName = hostPeer.name;
+    // ✅ Ambil data jastiper dengan fungsi yang sudah diperbaiki
+    final jastiperData = await _getJastiperData();
+    final jastiperUid = jastiperData['uid'];
+    final jastiperName = jastiperData['name'] ?? hostPeer.name ?? 'Jastiper';
+
+    if (jastiperUid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Data jastiper tidak ditemukan. Silakan coba lagi.")),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
 
     showModalBottomSheet(
       context: context,
@@ -347,7 +430,7 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.chat_bubble_outline),
-                title: Text("Kirim Pesan ke $hostName"),
+                title: Text("Kirim Pesan ke $jastiperName"),
                 onTap: () async {
                   Navigator.of(ctx).pop();
 
@@ -360,33 +443,8 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                   }
 
                   try {
-                    // ✅ PERBAIKAN: Query berdasarkan roomId field, bukan document ID
-                    final liveSessionQuery = await FirebaseFirestore.instance
-                        .collection('live_sessions')
-                        .where('roomId', isEqualTo: hostId) // hostId = hostPeer.peerId = roomId
-                        .limit(1)
-                        .get();
-
-                    if (liveSessionQuery.docs.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Sesi live tidak ditemukan')),
-                      );
-                      return;
-                    }
-
-                    final liveDoc = liveSessionQuery.docs.first;
-                    final actualJastiperUid = liveDoc.data()['hostId'] as String?;
-                    final jastiperName = liveDoc.data()['hostName'] as String? ?? hostName;
-
-                    if (actualJastiperUid == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Data jastiper tidak ditemukan')),
-                      );
-                      return;
-                    }
-
                     // Buat room ID deterministik
-                    final users = [currentUser.uid, actualJastiperUid]..sort();
+                    final users = [currentUser.uid, jastiperUid]..sort();
                     final roomId = users.join('_');
 
                     // Cek/buat chat room
@@ -398,14 +456,14 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
                     if (!roomDoc.exists) {
                       await FirebaseFirestore.instance.collection('chats').doc(roomId).set({
                         'type': 'direct',
-                        'users': [currentUser.uid, actualJastiperUid],
+                        'users': [currentUser.uid, jastiperUid],
                         'createdAt': FieldValue.serverTimestamp(),
                         'lastMessage': '',
                         'lastMessageTimestamp': FieldValue.serverTimestamp(),
                       });
                     }
 
-                    context.push('/chat/$actualJastiperUid', extra: jastiperName);
+                    context.push('/chat/$jastiperUid', extra: jastiperName);
 
                   } catch (e) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -584,6 +642,9 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
     ref.watch(liveShoppingProvider.select((state) => state.remoteVideoTrack));
     final hostName = ref.watch(liveShoppingProvider.select((state) => state.hostPeer?.name ?? 'Live'));
 
+    // ✅ TAMBAHAN: Debug info untuk melihat state
+    final liveState = ref.watch(liveShoppingProvider);
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
@@ -600,6 +661,36 @@ class _ViewerLiveScreenState extends ConsumerState<ViewerLiveScreen> {
           backgroundColor: Colors.black.withOpacity(0.7),
           foregroundColor: Colors.white,
           elevation: 0,
+          // ✅ TAMBAHAN: Debug info button (optional)
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.info_outline),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text("Debug Info"),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text("Room ID: ${liveState.roomId ?? 'null'}"),
+                        Text("Host Peer ID: ${liveState.hostPeer?.peerId ?? 'null'}"),
+                        Text("Current Role: ${liveState.currentRole ?? 'null'}"),
+                        Text("Is Connected: ${liveState.isConnected}"),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text("OK"),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
         ),
         body: Stack(
           children: [
