@@ -4,16 +4,26 @@ const cors = require("cors");
 const { SDK } = require("@100mslive/server-sdk");
 
 const admin = require("firebase-admin");
-const serviceAccount = require("./serviceAccountKey.json");
+//const serviceAccount = require("./serviceAccountKey.json");
 const axios = require("axios");
 const cron = require('node-cron');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+    databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
+  });
+}
+//admin.initializeApp({
+//  credential: admin.credential.cert(serviceAccount),
+//});
 
 const app = express();
-const port = 3000;
+//const port = 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -679,6 +689,7 @@ app.post("/xendit-webhook", async (req, res) => {
 });
 
 
-app.listen(port, () => {
-  console.log(`Backend server berjalan di http://localhost:${port}`);
-});
+//app.listen(port, () => {
+//  console.log(`Backend server berjalan di http://localhost:${port}`);
+//});
+module.exports = app;
