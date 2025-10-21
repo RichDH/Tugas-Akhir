@@ -238,10 +238,10 @@ class FeedScreen extends ConsumerWidget {
           },
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: filteredPosts.length,
+            itemCount: filteredPosts.length > 20 ? 20 : filteredPosts.length, // ✅ BATASI 20 POST PERTAMA
             itemBuilder: (context, index) {
               final post = filteredPosts[index];
-              print('🎯 Rendering post ${post.id}: ${post.title}'); // Debug log
+              print('🎯 Rendering post ${post.id}: ${post.title}');
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
                 child: PostWidget(post: post),

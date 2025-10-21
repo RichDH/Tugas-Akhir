@@ -441,7 +441,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     postId: selectedPost!.id,
                     postTitle: selectedPost!.title,
                     category: selectedPost!.category,
-                    // ✅ FIX 3: Pastikan image URL diambil dengan benar
                     postImageUrl: selectedPost!.imageUrls.isNotEmpty
                         ? selectedPost!.imageUrls.first
                         : '',

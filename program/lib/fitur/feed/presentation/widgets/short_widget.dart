@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../../common/utils/media_optimizer.dart';
 import '../../../post/domain/entities/post.dart';
 import '../../../post/presentation/widgets/video_player_widgets.dart';
 import '../../../cart/domain/entities/cart_item.dart';
@@ -32,7 +33,6 @@ class _ShortsWidgetState extends ConsumerState<ShortsWidget> {
 
     return GestureDetector(
       onTap: () {
-        // Jangan navigasi ke detail, biarkan user berinteraksi dengan shorts
       },
       child: Stack(
         children: [
@@ -43,7 +43,7 @@ class _ShortsWidgetState extends ConsumerState<ShortsWidget> {
             color: Colors.black,
             child: post.videoUrl != null
                 ? VideoPlayerWidget(
-              url: post.videoUrl!,
+              url: MediaOptimizer.optimizeVideoUrl(post.videoUrl!, width: 480),
               autoPlay: true,
               showControls: false,
             )

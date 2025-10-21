@@ -11,6 +11,8 @@ import 'package:program/fitur/jualbeli/domain/entities/transaction_entity.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 import 'dart:io';
 
+import '../../../../app/constants/app_constants.dart';
+
 class CreateReturnRequestScreen extends ConsumerStatefulWidget {
   final String transactionId;
   const CreateReturnRequestScreen({super.key, required this.transactionId});
@@ -26,13 +28,12 @@ class _CreateReturnRequestScreenState extends ConsumerState<CreateReturnRequestS
   bool _isSubmitting = false;
 
   late CloudinaryPublic cloudinary;
-  final String _cloudinaryCloudName = "ds656gqe2";
-  final String _cloudinaryUploadPreset = "ngoper_unsigned_upload";
+  final String _cloudinaryCloudName = AppConstants.cloudinaryCloudName;
+  final String _cloudinaryUploadPreset = AppConstants.cloudinaryUploadPreset;
 
   @override
   void initState() {
     super.initState();
-    // ✅ INISIALISASI CLOUDINARY
     cloudinary = CloudinaryPublic(
         _cloudinaryCloudName, _cloudinaryUploadPreset, cache: false);
   }

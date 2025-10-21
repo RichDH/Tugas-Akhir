@@ -6,6 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 
+import '../../../../app/constants/app_constants.dart';
+
 class EditProfileState {
   final bool isLoading;
   final String? error;
@@ -31,10 +33,9 @@ class EditProfileNotifier extends StateNotifier<EditProfileState> {
   late CloudinaryPublic _cloudinary;
 
   EditProfileNotifier(this._firestore) : super(EditProfileState()) {
-    // MENGGUNAKAN konfigurasi Cloudinary yang sama seperti di PostRepositoryImpl
     _cloudinary = CloudinaryPublic(
-      "ds656gqe2", // Cloud name yang sama
-      "ngoper_unsigned_upload", // Upload preset yang sama
+      AppConstants.cloudinaryCloudName, // Cloud name yang sama
+      AppConstants.cloudinaryUploadPreset, // Upload preset yang sama
       cache: false,
     );
   }

@@ -12,6 +12,25 @@ import '../providers/post_provider.dart';
 import '../widgets/video_player_widgets.dart';
 import 'package:program/fitur/post/presentation/widgets/take_order_dialog.dart';
 import 'package:program/fitur/post/presentation/providers/offer_provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
+
+/// Util untuk optimasi URL Cloudinary
+String _optimizeUrl(String url, {int? width, bool isVideo = false}) {
+  try {
+    if (!url.contains('res.cloudinary.com') || !url.contains('/upload/')) return url;
+    final i = url.indexOf('/upload/');
+    final before = url.substring(0, i + 8);
+    final after = url.substring(i + 8);
+    final parts = <String>[];
+    if (width != null) parts.add('w_$width');
+    parts.add(isVideo ? 'q_auto:eco' : 'q_auto');
+    parts.add('f_auto');
+    return '$before${parts.join(',')},/$after';
+  } catch (_) {
+    return url;
+  }
+}
 
 class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
@@ -130,33 +149,84 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   Widget _buildMediaContent(post) {
-    if (post.videoUrl != null) {
+    if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
       return Container(
         width: double.infinity,
         height: 300,
         color: Colors.black,
-        child: VideoPlayerWidget(url: post.videoUrl!),
-      );
-    } else if (post.imageUrls.isNotEmpty) {
-      return Container(
-        width: double.infinity,
-        height: 300,
-        color: Colors.black,
-        child: Image.network(
-          post.imageUrls[0],
-          fit: BoxFit.contain,
-          loadingBuilder: (context, child, progress) {
-            return progress == null
-                ? child
-                : const Center(child: CircularProgressIndicator());
-          },
-          errorBuilder: (context, error, stackTrace) =>
-          const Center(child: Icon(Icons.error, color: Colors.white)),
+        child: VideoPlayerWidget(
+          url: _optimizeUrl(post.videoUrl!, width: 800, isVideo: true),
+          autoPlay: false,
+          showControls: true,
         ),
       );
+    } else if (post.imageUrls.isNotEmpty) {
+      // ✅ TAMBAHAN: Support multiple images dengan PageView
+      if (post.imageUrls.length > 1) {
+        return Container(
+          width: double.infinity,
+          height: 300,
+          color: Colors.black,
+          child: PageView.builder(
+            itemCount: post.imageUrls.length,
+            itemBuilder: (context, index) {
+              final optimized = _optimizeUrl(post.imageUrls[index], width: 800, isVideo: false);
+              return Stack(
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: optimized,
+                    width: double.infinity,
+                    height: 300,
+                    fit: BoxFit.contain,
+                    memCacheWidth: 800,
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) =>
+                    const Center(child: Icon(Icons.error, color: Colors.white, size: 48)),
+                  ),
+                  // ✅ Indicator untuk multiple images
+                  if (post.imageUrls.length > 1)
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${index + 1}/${post.imageUrls.length}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        );
+      } else {
+        // Single image
+        final optimized = _optimizeUrl(post.imageUrls[0], width: 800, isVideo: false);
+        return Container(
+          width: double.infinity,
+          height: 300,
+          color: Colors.black,
+          child: CachedNetworkImage(
+            imageUrl: optimized,
+            fit: BoxFit.contain,
+            memCacheWidth: 800,
+            placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+            errorWidget: (context, error, stackTrace) =>
+            const Center(child: Icon(Icons.error, color: Colors.white, size: 48)),
+          ),
+        );
+      }
     }
     return const SizedBox.shrink();
   }
+
+
 
   // ✅ POST ACTIONS (LIKE BUTTON INSTAGRAM STYLE) - DIPERBAIKI
   Widget _buildPostActions(post) {
@@ -285,10 +355,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           padding: EdgeInsets.all(16),
           child: Text(
             'Komentar',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
         StreamBuilder<QuerySnapshot>(
@@ -297,6 +364,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               .doc(post.id)
               .collection('comments')
               .orderBy('createdAt', descending: true)
+              .limit(5)
               .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
@@ -321,19 +389,32 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               itemCount: comments.length,
               itemBuilder: (context, index) {
                 final comment = comments[index].data() as Map<String, dynamic>;
+                final username = comment['username'] ?? 'Anonymous';
+
                 return ListTile(
-                  leading: const CircleAvatar(
+                  leading: CircleAvatar(
                     radius: 16,
-                    child: Icon(Icons.person, size: 16),
+                    backgroundColor: Colors.blueGrey,
+                    child: Text(
+                      username.isNotEmpty ? username[0].toUpperCase() : 'A',
+                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                    ),
                   ),
+
+                  // CircleAvatar(backgroundImage: CachedNetworkImageProvider(
+                  //     _optimizeCloudinaryUrl(userProfileUrl, width: 100) // ✅ KECIL untuk avatar
+                  // ))
                   title: Text(
-                    comment['username'] ?? 'Anonymous',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    username,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
-                  subtitle: Text(comment['text'] ?? ''),
+                  subtitle: Text(
+                    comment['text'] ?? '',
+                    style: const TextStyle(fontSize: 13),
+                  ),
                   trailing: Text(
                     _formatTimestamp(comment['createdAt']),
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 );
               },
@@ -343,6 +424,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       ],
     );
   }
+
 
   Widget _buildBottomActions(post) {
     final postType = _getPostTypeText(post.type);

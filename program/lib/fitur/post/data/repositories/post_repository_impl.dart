@@ -6,13 +6,18 @@ import 'package:cloudinary_public/cloudinary_public.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
+import '../../../../app/constants/app_constants.dart';
+
 class PostRepositoryImpl implements PostRepository {
   final FirebaseFirestore _firestore;
   late CloudinaryPublic cloudinary;
 
   // Kredensial Cloudinary
-  final String _cloudinaryCloudName = "ds656gqe2";
-  final String _cloudinaryUploadPreset = "ngoper_unsigned_upload";
+  // final String _cloudinaryCloudName = "ds656gqe2";
+  // final String _cloudinaryUploadPreset = "ngoper_unsigned_upload";
+
+  String get _cloudinaryCloudName => AppConstants.cloudinaryCloudName;
+  String get _cloudinaryUploadPreset => AppConstants.cloudinaryUploadPreset;
 
   PostRepositoryImpl(this._firestore) {
     cloudinary = CloudinaryPublic(_cloudinaryCloudName, _cloudinaryUploadPreset, cache: false);

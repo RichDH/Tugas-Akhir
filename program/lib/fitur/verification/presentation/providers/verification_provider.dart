@@ -5,7 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:program/app/providers/firebase_providers.dart';
 import 'package:cloudinary_public/cloudinary_public.dart';
 
-// Sama seperti PostRepository, kita bisa buat VerificationRepository
+import '../../../../app/constants/app_constants.dart';
+
 abstract class VerificationRepository {
   Future<String> uploadVerificationImage(String imagePath, String userId, String docType);
   Future<void> updateUserVerificationStatus(String userId, String ktpUrl, String selfieUrl);
@@ -16,8 +17,7 @@ class VerificationRepositoryImpl implements VerificationRepository {
   final CloudinaryPublic _cloudinary;
 
   VerificationRepositoryImpl(this._firestore)
-  // Menggunakan kredensial yang sama persis seperti di PostRepositoryImpl Anda
-      : _cloudinary = CloudinaryPublic('ds656gqe2', 'ngoper_unsigned_upload', cache: false);
+      : _cloudinary = CloudinaryPublic(AppConstants.cloudinaryCloudName, AppConstants.cloudinaryUploadPreset, cache: false);
 
   @override
   Future<String> uploadVerificationImage(String imagePath, String userId, String docType) async {

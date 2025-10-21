@@ -1,142 +1,210 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // ✅ TAMBAHKAN IMPORT INI
-
-import 'package:program/fitur/post/domain/entities/post.dart';
-import 'package:program/fitur/post/presentation/providers/post_provider.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import 'package:program/fitur/cart/domain/entities/cart_item.dart';
 import 'package:program/fitur/cart/presentation/providers/cart_provider.dart';
+import 'package:program/fitur/post/domain/entities/post.dart';
+import 'package:program/fitur/post/presentation/providers/post_provider.dart';
 import 'package:program/fitur/post/presentation/widgets/video_player_widgets.dart';
 
-class PostWidget extends ConsumerWidget {
-  final Post post;
+/// Util ringan untuk menyisipkan transform Cloudinary secara aman
+String _optimizeCloudinaryUrl(String originalUrl, {int? width, bool isVideo = false}) {
+  try {
+    if (!originalUrl.contains('res.cloudinary.com') || !originalUrl.contains('/upload/')) {
+      return originalUrl; // bukan Cloudinary -> biarkan
+    }
+    final idx = originalUrl.indexOf('/upload/');
+    final before = originalUrl.substring(0, idx + 8); // termasuk '/upload/'
+    final after = originalUrl.substring(idx + 8);
 
-  const PostWidget({
-    required this.post,
-    super.key,
-  });
+    final params = <String>[];
+    if (width != null) params.add('w_$width');
+    // q_auto:eco untuk video, q_auto untuk image
+    params.add(isVideo ? 'q_auto:eco' : 'q_auto');
+    params.add('f_auto');
+
+    return '$before${params.join(',')},/$after';
+  } catch (_) {
+    return originalUrl; // fallback aman
+  }
+}
+
+/// PostWidget versi hemat bandwidth:
+/// - Gambar di-resize via Cloudinary transforms
+/// - Video hanya diload saat terlihat (lazy) menggunakan VisibilityDetector
+class PostWidget extends ConsumerStatefulWidget {
+  final Post post;
+  const PostWidget({super.key, required this.post});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PostWidget> createState() => _PostWidgetState();
+}
+
+class _PostWidgetState extends ConsumerState<PostWidget> {
+  bool _shouldLoadVideo = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+
     return GestureDetector(
-      onTap: () {
-        context.push('/post-detail/${post.id}');
-      },
+      onTap: () => context.push('/post-detail/${post.id}'),
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // HEADER POST (USER INFO)
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Colors.blueGrey,
-                    child: Text(
-                      post.username.isNotEmpty ? post.username[0].toUpperCase() : '?',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          post.username,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        if (post.location?.isNotEmpty == true)
-                          Text(
-                            post.location!,
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () {
-                      // TODO: Menu opsi
-                    },
-                  ),
-                ],
-              ),
-            ),
-
-            // MEDIA (VIDEO ATAU GAMBAR) DENGAN BACKGROUND HITAM
-            if (post.videoUrl?.isNotEmpty == true)
-              Container(
-                width: double.infinity,
-                height: 300,
-                color: Colors.black,
-                child: VideoPlayerWidget(url: post.videoUrl!),
-              )
-            else if (post.imageUrls.isNotEmpty)
-              Container(
-                width: double.infinity,
-                height: 300,
-                color: Colors.black,
-                child: CachedNetworkImage(
-                  imageUrl: post.imageUrls.first,
-                  fit: BoxFit.contain,
-                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                  errorWidget: (context, url, error) => const Center(
-                    child: Icon(Icons.error, color: Colors.white, size: 48),
-                  ),
-                ),
-              ),
-
-            // DETAIL POST
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    post.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-
-                  if (post.description?.isNotEmpty == true)
-                    Text(
-                      post.description!,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  const SizedBox(height: 8),
-
-                  Text('Jenis: ${post.type.name.toUpperCase()}'),
-                  if (post.category?.isNotEmpty == true)
-                    Text('Kategori: ${post.category}'),
-                  const SizedBox(height: 8),
-
-                  // HARGA ATAU INFO REQUEST
-                  if (post.type == PostType.request)
-                    _buildRequestInfo(post)
-                  else
-                    _buildRegularPrice(post),
-                ],
-              ),
-            ),
-
-            // ACTION BUTTONS
-            _buildActionButtons(context, ref, post),
+            _buildHeader(post),
+            _buildMedia(post),
+            _buildDetails(post),
+            _buildActionRow(context, post),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(Post post) {
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: Colors.blueGrey,
+            child: Text(
+              post.username.isNotEmpty ? post.username[0].toUpperCase() : '?',
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  post.username,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                if (post.location?.isNotEmpty == true)
+                  Text(
+                    post.location!,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMedia(Post post) {
+    final hasVideo = post.videoUrl?.isNotEmpty == true;
+    final hasImage = post.imageUrls.isNotEmpty;
+
+    if (!hasVideo && !hasImage) {
+      return const SizedBox.shrink();
+    }
+
+    final mediaChild = Container(
+      width: double.infinity,
+      height: 300,
+      color: Colors.black,
+      child: hasVideo
+          ? (_shouldLoadVideo
+          ? VideoPlayerWidget(
+        url: _optimizeCloudinaryUrl(post.videoUrl!, width: 600, isVideo: true),
+        autoPlay: post.type == PostType.short,
+        showControls: true,
+      )
+          : GestureDetector(
+        onTap: () {
+          setState(() => _shouldLoadVideo = true);
+        },
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.play_circle_outline, color: Colors.white, size: 64),
+              SizedBox(height: 8),
+              Text('Tap atau scroll untuk memutar video',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+      ))
+          : CachedNetworkImage(
+        imageUrl: _optimizeCloudinaryUrl(post.imageUrls.first, width: 600),
+        fit: BoxFit.contain,
+        memCacheWidth: 600,
+        placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+        errorWidget: (context, url, error) =>
+        const Center(child: Icon(Icons.error, color: Colors.white, size: 48)),
+      ),
+    );
+
+    // Gunakan VisibilityDetector untuk lazy loading video
+    if (hasVideo) {
+      return VisibilityDetector(
+        key: Key('post_vis_${post.id}'),
+        onVisibilityChanged: (info) {
+          final fraction = info.visibleFraction;
+          // Untuk short, threshold 0.3 agar lebih mudah play
+          final threshold = post.type == PostType.short ? 0.3 : 0.5;
+
+          if (fraction > threshold && !_shouldLoadVideo) {
+            setState(() => _shouldLoadVideo = true);
+          } else if (fraction < 0.1 && _shouldLoadVideo && post.type != PostType.short) {
+            // Untuk post biasa, boleh unload. Untuk short, tetap loaded
+            setState(() => _shouldLoadVideo = false);
+          }
+        },
+        child: mediaChild,
+      );
+    }
+
+    return mediaChild;
+  }
+
+  Widget _buildDetails(Post post) {
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            post.title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          if (post.description?.isNotEmpty == true)
+            Text(
+              post.description!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          const SizedBox(height: 8),
+          Text('Jenis: ${post.type.name.toUpperCase()}'),
+          if (post.category?.isNotEmpty == true)
+            Text('Kategori: ${post.category}'),
+          const SizedBox(height: 8),
+          if (post.type == PostType.request)
+            _buildRequestInfo(post)
+          else
+            _buildRegularPrice(post),
+        ],
       ),
     );
   }
@@ -150,7 +218,7 @@ class PostWidget extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (post.isActive ==false)
+        if (post.isActive == false)
           Text(
             'Tidak Aktif',
             style: TextStyle(
@@ -194,31 +262,26 @@ class PostWidget extends ConsumerWidget {
         ? NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0)
         .format(post.price!)
         : 'Free';
-
     return Text(
       formattedPrice,
       style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          color: Colors.green,
-          fontSize: 18
+        fontWeight: FontWeight.bold,
+        color: Colors.green,
+        fontSize: 18,
       ),
     );
   }
 
-  Widget _buildActionButtons(BuildContext context, WidgetRef ref, Post post) {
+  Widget _buildActionRow(BuildContext context, Post post) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Like, Comment, Cart buttons
           Row(
             children: [
-              // LIKE BUTTON
               InkWell(
-                onTap: () {
-                  ref.read(postNotifierProvider.notifier).toggleLike(post.id);
-                },
+                onTap: () => ref.read(postNotifierProvider.notifier).toggleLike(post.id),
                 child: Row(
                   children: [
                     Icon(
@@ -231,12 +294,8 @@ class PostWidget extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 16),
-
-              // COMMENT BUTTON
               InkWell(
-                onTap: () {
-                  context.push('/post-detail/${post.id}');
-                },
+                onTap: () => context.push('/post-detail/${post.id}'),
                 child: Row(
                   children: [
                     const Icon(Icons.comment_outlined, color: Colors.grey),
@@ -246,8 +305,6 @@ class PostWidget extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 16),
-
-              // CART BUTTON (HANYA UNTUK JASTIP/SHORT)
               if (post.type == PostType.jastip || post.type == PostType.short)
                 InkWell(
                   onTap: () {
@@ -274,29 +331,10 @@ class PostWidget extends ConsumerWidget {
                   },
                   child: const Icon(Icons.shopping_cart_outlined, color: Colors.grey),
                 ),
-
-              // OFFERS BUTTON (KHUSUS REQUEST)
-              if (post.type == PostType.request) ...[
-                const SizedBox(width: 16),
-                InkWell(
-                  onTap: () {
-                    context.push('/post-detail/${post.id}');
-                  },
-                  child: Row(
-                    children: [
-                      const Icon(Icons.local_offer_outlined, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text('${post.currentOffers}'),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
-
-          // ACTION BUTTON (BELI/AMBIL PESANAN)
           if (post.type == PostType.request)
-            _buildRequestActionButton(context, ref, post)
+            _buildRequestActionButton(context, post)
           else
             _buildBuyButton(context, post),
         ],
@@ -304,20 +342,16 @@ class PostWidget extends ConsumerWidget {
     );
   }
 
-  // ✅ TOMBOL AMBIL PESANAN (REQUEST) - UPDATED
-  Widget _buildRequestActionButton(BuildContext context, WidgetRef ref, Post post) {
+  Widget _buildRequestActionButton(BuildContext context, Post post) {
     final isExpired = post.isActive;
     final currentOffers = post.currentOffers;
     final maxOffers = post.maxOffers ?? 1;
     final isFull = currentOffers >= maxOffers;
 
-    // ✅ CEK APAKAH POST MILIK USER SENDIRI
     final currentUser = FirebaseAuth.instance.currentUser;
     final isOwnPost = currentUser?.uid == post.userId;
 
-    // ✅ JANGAN TAMPILKAN TOMBOL JIKA EXPIRED, FULL, ATAU POST SENDIRI
     if (isExpired || isFull || isOwnPost) {
-      // ✅ TAMPILKAN WIDGET ALTERNATIF UNTUK POST SENDIRI
       if (isOwnPost) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -343,9 +377,7 @@ class PostWidget extends ConsumerWidget {
     }
 
     return ElevatedButton(
-      onPressed: () {
-        _takeOrder(context, ref, post);
-      },
+      onPressed: () => _takeOrder(context, post),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
@@ -357,9 +389,7 @@ class PostWidget extends ConsumerWidget {
 
   Widget _buildBuyButton(BuildContext context, Post post) {
     return ElevatedButton(
-      onPressed: () {
-        context.push('/post-detail/${post.id}');
-      },
+      onPressed: () => context.push('/post-detail/${post.id}'),
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
@@ -369,10 +399,10 @@ class PostWidget extends ConsumerWidget {
     );
   }
 
-  void _takeOrder(BuildContext context, WidgetRef ref, Post post) {
+  void _takeOrder(BuildContext context, Post post) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Ambil Pesanan'),
         content: Text('Apakah Anda yakin ingin mengambil pesanan "${post.title}"?'),
         actions: [
@@ -384,7 +414,6 @@ class PostWidget extends ConsumerWidget {
             onPressed: () {
               Navigator.pop(context);
               ref.read(postNotifierProvider.notifier).takeOrder(post.id);
-
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('Pesanan berhasil diambil!'),
