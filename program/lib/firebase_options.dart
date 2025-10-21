@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -28,15 +25,9 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -51,7 +42,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDOpFdGlZC3ZxryisOgHeZH6zW3VKWcXjw',
-    appId: '1:730172618870:android:ea8f7044c932a039f98757',
+    appId: '1:730172618870:android:0c4145d6a8569d4bf98757',
     messagingSenderId: '730172618870',
     projectId: 'ta-ngoper',
     storageBucket: 'ta-ngoper.firebasestorage.app',
@@ -65,4 +56,34 @@ class DefaultFirebaseOptions {
     storageBucket: 'ta-ngoper.firebasestorage.app',
     iosBundleId: 'com.example.program',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyBcp5LEZCuTiJPKPw072u7lofLn8XLjdPk',
+    appId: '1:730172618870:web:49eb5514d8d45845f98757',
+    messagingSenderId: '730172618870',
+    projectId: 'ta-ngoper',
+    authDomain: 'ta-ngoper.firebaseapp.com',
+    storageBucket: 'ta-ngoper.firebasestorage.app',
+    measurementId: 'G-3YCC32DJSP',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'AIzaSyD2kJvRkSSDWg0Mj6eVaBJeOMaxo7c2h8k',
+    appId: '1:730172618870:ios:ad0dc8828575c976f98757',
+    messagingSenderId: '730172618870',
+    projectId: 'ta-ngoper',
+    storageBucket: 'ta-ngoper.firebasestorage.app',
+    iosBundleId: 'com.example.program',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyBcp5LEZCuTiJPKPw072u7lofLn8XLjdPk',
+    appId: '1:730172618870:web:251fcaf0513dcab9f98757',
+    messagingSenderId: '730172618870',
+    projectId: 'ta-ngoper',
+    authDomain: 'ta-ngoper.firebaseapp.com',
+    storageBucket: 'ta-ngoper.firebasestorage.app',
+    measurementId: 'G-PSF7PSZ4TR',
+  );
+
 }
