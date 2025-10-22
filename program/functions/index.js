@@ -314,7 +314,7 @@ if (!isVercel) {
   console.log('Starting local cron jobs...');
   cron.schedule('*/2 * * * *', runAutoCompleteTransactions);
   cron.schedule('*/2 * * * *', runAutoApproveReturns);
-  cron.schedule('*/5 * * * *', runCartCleanup);
+  cron.schedule('*/1 * * * *', runCartCleanup);
 }
 
 // ✅ ENDPOINT LAINNYA (TETAP SAMA)
