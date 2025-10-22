@@ -54,6 +54,13 @@ class AdminDrawer extends ConsumerWidget {
               context.go('/admin/return-review');
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.flag_outlined),
+            title: const Text('Manage Report'),
+            onTap: () {
+              context.go('/admin/reports');
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),

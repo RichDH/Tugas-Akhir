@@ -195,13 +195,111 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
   }
 
   void _showReportDialog(Post post) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Fitur laporan akan segera tersedia'),
-        backgroundColor: Colors.orange,
+    final reasons = <String>[
+      'Penipuan / Scam',
+      'Konten tidak pantas',
+      'Barang palsu',
+      'Spam',
+      'Lainnya',
+    ];
+
+    String selectedReason = reasons.first;
+    final TextEditingController descCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Laporkan Post'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: selectedReason,
+                decoration: const InputDecoration(
+                  labelText: 'Alasan',
+                  border: OutlineInputBorder(),
+                ),
+                items: reasons
+                    .map((r) => DropdownMenuItem(value: r, child: Text(r)))
+                    .toList(),
+                onChanged: (v) {
+                  if (v != null) {
+                    selectedReason = v;
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Keterangan (opsional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Anda harus login untuk melapor'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+
+                // Simpan report ke Firestore
+                final reportRef = FirebaseFirestore.instance.collection('reports').doc();
+
+                await reportRef.set({
+                  'id': reportRef.id,
+                  'type': 'post', // untuk sekarang post; bisa ditambah 'user' nanti
+                  'reportedPostId': post.id,
+                  'reportedUserId': post.userId,
+                  'reportedUsername': post.username,
+                  'reporterUserId': currentUser.uid,
+                  'reason': selectedReason,
+                  'description': descCtrl.text.trim(),
+                  'status': 'open', // open | reviewed | action_taken | dismissed
+                  'createdAt': FieldValue.serverTimestamp(),
+                });
+
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Laporan terkirim. Terima kasih!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Gagal mengirim laporan: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Kirim'),
+          ),
+        ],
       ),
     );
   }
+
 
 
 
