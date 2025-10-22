@@ -346,6 +346,7 @@ class ProfileScreen extends ConsumerWidget {
             final name = userData['name'] as String? ?? username;
             final followersCount = ref.watch(followersCountStreamProvider(targetUserId)).value ?? 0;
             final followingCount = ref.watch(followingCountStreamProvider(targetUserId)).value ?? 0;
+            final isAdmin = ref.watch(isAdminProvider);
 
             return Column(
               children: [
@@ -386,55 +387,95 @@ class ProfileScreen extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                if (isMyProfile)
-                  ElevatedButton(
-                    onPressed: () => context.push('/edit-profile'),
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 36)),
-                    child: const Text('Edit Profil'),
-                  )
-                else
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Consumer(
-                          builder: (context, ref, _) {
-                            final isFollowingAsync = ref.watch(isFollowingProvider(targetUserId));
-                            final followNotifier = ref.read(followProvider.notifier);
-                            final followState = ref.watch(followProvider);
+                Consumer(
+                  builder: (context, ref, child) {
+                    final isAdmin = ref.watch(isAdminProvider);
 
-                            final isFollowing = isFollowingAsync.value ?? false;
-                            final isLoading = followState.isLoading;
-
-                            return ElevatedButton(
-                              onPressed: isLoading ? null : () => followNotifier.toggleFollow(targetUserId),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isFollowing ? Colors.grey.shade300 : Theme.of(context).primaryColor,
-                                foregroundColor: isFollowing ? Colors.black87 : Colors.white,
-                                minimumSize: const Size(double.infinity, 36),
+                    if (isMyProfile) {
+                      return ElevatedButton(
+                        onPressed: () => context.push('/edit-profile'),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 36),
+                        ),
+                        child: const Text('Edit Profil'),
+                      );
+                    } else if (isAdmin) {
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Fitur tutup akun akan dibuat segera'),
+                                backgroundColor: Colors.orange,
                               ),
-                              child: isLoading
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                                  : Text(isFollowing ? 'Unfollow' : 'Follow'),
                             );
                           },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 36),
+                          ),
+                          child: const Text('Tutup Akun'),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            try {
-                              final chatRoomId = await ref.read(chatNotifierProvider.notifier).createOrGetChatRoom(targetUserId);
-                              context.push('/chat/$targetUserId', extra: {'username': username, 'chatRoomId': chatRoomId});
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal memulai chat: $e")));
-                            }
-                          },
-                          child: const Text('Message'),
-                        ),
-                      ),
-                    ],
-                  ),
+                      );
+                    } else {
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Consumer(
+                              builder: (context, ref, _) {
+                                final isFollowingAsync = ref.watch(isFollowingProvider(targetUserId));
+                                final followNotifier = ref.read(followProvider.notifier);
+                                final followState = ref.watch(followProvider);
+
+                                final isFollowing = isFollowingAsync.value ?? false;
+                                final isLoading = followState.isLoading;
+
+                                return ElevatedButton(
+                                  onPressed: isLoading ? null : () => followNotifier.toggleFollow(targetUserId),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isFollowing ? Colors.grey.shade300 : Theme.of(context).primaryColor,
+                                    foregroundColor: isFollowing ? Colors.black87 : Colors.white,
+                                    minimumSize: const Size(double.infinity, 36),
+                                  ),
+                                  child: isLoading
+                                      ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                      : Text(isFollowing ? 'Unfollow' : 'Follow'),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                try {
+                                  final chatRoomId = await ref
+                                      .read(chatNotifierProvider.notifier)
+                                      .createOrGetChatRoom(targetUserId);
+                                  context.push('/chat/$targetUserId', extra: {
+                                    'username': username,
+                                    'chatRoomId': chatRoomId,
+                                  });
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text("Gagal memulai chat: $e")),
+                                  );
+                                }
+                              },
+                              child: const Text('Message'),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                  },
+                ),
               ],
             );
           },

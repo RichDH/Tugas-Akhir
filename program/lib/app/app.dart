@@ -36,6 +36,7 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
 import '../fitur/admin/presentation/screens/admin_manage_reports_screen.dart';
+import '../fitur/admin/presentation/screens/admin_search_user_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_screen.dart';
 import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
@@ -215,6 +216,10 @@ final goRouter = Provider<GoRouter>((ref) {
           final otherName = extra['name']?.toString() ?? 'Pengguna';
           return AdminChatScreen(roomId: roomId, otherName: otherName);
         },
+      ),
+      GoRoute(
+        path: '/admin/search-users',
+        builder: (context, state) => const AdminSearchUserScreen(),
       ),
 
 

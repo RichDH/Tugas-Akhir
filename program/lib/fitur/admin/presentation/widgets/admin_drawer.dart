@@ -28,7 +28,6 @@ class AdminDrawer extends ConsumerWidget {
             leading: const Icon(Icons.dashboard_outlined),
             title: const Text('Dashboard'),
             onTap: () {
-              // Navigasi ke halaman dashboard
               context.go('/admin');
             },
           ),
@@ -43,7 +42,6 @@ class AdminDrawer extends ConsumerWidget {
             leading: const Icon(Icons.verified_user_outlined),
             title: const Text('Verifikasi Pengguna'),
             onTap: () {
-              // Navigasi ke halaman daftar verifikasi
               context.go('/admin/verifications');
             },
           ),
@@ -59,6 +57,13 @@ class AdminDrawer extends ConsumerWidget {
             title: const Text('Manage Report'),
             onTap: () {
               context.go('/admin/reports');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.search),
+            title: const Text('Search User'),
+            onTap: () {
+              context.go('/admin/search-users');
             },
           ),
           const Divider(),
