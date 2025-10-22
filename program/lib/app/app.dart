@@ -35,6 +35,7 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
+import '../fitur/admin/presentation/screens/admin_manage_reports_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_screen.dart';
 import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
@@ -131,7 +132,11 @@ final goRouter = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/chat-admin',
-        builder: (context, state) => const ChatAdminScreen(), // Buat di langkah 3
+        builder: (context, state) => const ChatAdminScreen(),
+      ),
+      GoRoute(
+        path: '/admin/reports',
+        builder: (context, state) => const AdminManageReportsScreen(),
       ),
 
 
@@ -288,19 +293,42 @@ final goRouter = Provider<GoRouter>((ref) {
 
     // --- Redirect Logic ---
     redirect: (context, state) {
-      final isAuthenticated = authState.when(data: (user) => user != null, loading: () => null, error: (err, stack) => false);
+      final isAuthenticated = authState.when(
+        data: (user) => user != null,
+        loading: () => null,
+        error: (err, stack) => false,
+      );
       final isAuthRoute = state.matchedLocation == '/login' || state.matchedLocation == '/register';
       final isRoot = state.matchedLocation == '/';
       if (isAuthenticated == null) return null;
 
+      // ==== ADMIN WHITELIST START ====
       if (isAuthenticated && isAdmin) {
-        final isAdminRoute = state.matchedLocation.startsWith('/admin');
-        if (!isAdminRoute) {
+        // Rute yang boleh diakses admin di luar /admin
+        final allowedForAdmin = <bool>[
+          state.matchedLocation.startsWith('/admin'),
+          state.matchedLocation.startsWith('/post-detail/'),
+          state.matchedLocation.startsWith('/user/'),
+          state.matchedLocation.startsWith('/chat'),
+          state.matchedLocation.startsWith('/group-chat'),
+          state.matchedLocation.startsWith('/notifications'),
+          state.matchedLocation.startsWith('/top-up'),
+          state.matchedLocation.startsWith('/transaction-detail/'),
+          state.matchedLocation.startsWith('/request-history'),
+          state.matchedLocation.startsWith('/transaction-history'),
+          state.matchedLocation.startsWith('/return-response'),
+          state.matchedLocation.startsWith('/return-confirmation'),
+          state.matchedLocation.startsWith('/list-interested-order'),
+          state.matchedLocation.startsWith('/edit-post/'),
+          state.matchedLocation.startsWith('/edit-profile'),
+        ].any((v) => v);
+
+        if (!allowedForAdmin) {
           return '/admin';
         }
         return null;
       }
-
+      // ==== ADMIN WHITELIST END ====
 
       if (isAuthenticated && !isAdmin) {
         if (isAuthRoute || isRoot) return '/feed';
@@ -309,6 +337,7 @@ final goRouter = Provider<GoRouter>((ref) {
       }
       return null;
     },
+
   );
 });
 

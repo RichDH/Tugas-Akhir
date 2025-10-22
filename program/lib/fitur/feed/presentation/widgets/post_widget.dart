@@ -260,12 +260,11 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
                   return;
                 }
 
-                // Simpan report ke Firestore
                 final reportRef = FirebaseFirestore.instance.collection('reports').doc();
 
                 await reportRef.set({
                   'id': reportRef.id,
-                  'type': 'post', // untuk sekarang post; bisa ditambah 'user' nanti
+                  'type': 'post',
                   'reportedPostId': post.id,
                   'reportedUserId': post.userId,
                   'reportedUsername': post.username,
