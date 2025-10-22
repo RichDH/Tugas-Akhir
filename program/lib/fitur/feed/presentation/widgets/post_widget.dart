@@ -319,7 +319,7 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
           Text(
             'Tidak Aktif',
             style: TextStyle(
-              color: isExpired ? Colors.red : Colors.green,
+              color: isExpired ? Colors.red : Colors.red,
               fontWeight: FontWeight.bold,
             ),
           ),

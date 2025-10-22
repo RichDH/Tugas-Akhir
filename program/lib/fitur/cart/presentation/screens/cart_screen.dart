@@ -8,11 +8,27 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../providers/cart_provider.dart';
 
-class CartScreen extends ConsumerWidget {
+class CartScreen extends ConsumerStatefulWidget {
   const CartScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CartScreen> createState() => _CartScreenState();
+}
+
+class _CartScreenState extends ConsumerState<CartScreen> {
+  bool _isValidating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Auto-validate cart items saat screen dibuka
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _validateCartItems();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cartItemsAsync = ref.watch(cartProvider);
     final cartNotifier = ref.read(cartProvider.notifier);
 
@@ -21,6 +37,23 @@ class CartScreen extends ConsumerWidget {
         title: const Text('Keranjang'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
+        actions: [
+          // Tombol refresh manual
+          IconButton(
+            onPressed: _isValidating ? null : () => _validateCartItems(),
+            icon: _isValidating
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+                : const Icon(Icons.refresh),
+            tooltip: 'Perbarui Keranjang',
+          ),
+        ],
       ),
       body: cartItemsAsync.when(
         loading: () => const Center(
@@ -399,7 +432,7 @@ class CartScreen extends ConsumerWidget {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: cartItems.isNotEmpty
+              onPressed: cartItems.isNotEmpty && !_isValidating
                   ? () => _processCheckout(context, cartItems, totalAmount, cartNotifier)
                   : null,
               style: ElevatedButton.styleFrom(
@@ -425,7 +458,139 @@ class CartScreen extends ConsumerWidget {
     );
   }
 
-  // ✅ PROCESS CHECKOUT DENGAN CEK SALDO
+  // ✅ VALIDASI CART ITEMS DARI POST YANG SUDAH DI-DELETE
+  Future<void> _validateCartItems() async {
+    if (_isValidating) return;
+
+    setState(() {
+      _isValidating = true;
+    });
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        setState(() {
+          _isValidating = false;
+        });
+        return;
+      }
+
+      final cartRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('cart');
+
+      final cartSnapshot = await cartRef.get();
+      List<String> invalidItemIds = [];
+      List<String> invalidItemNames = [];
+
+      for (final cartDoc in cartSnapshot.docs) {
+        final cartItem = cartDoc.data();
+        final postId = cartItem['postId'] as String?;
+
+        if (postId != null) {
+          final postDoc = await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .get();
+
+          // Cek apakah post sudah tidak ada atau di-soft delete
+          if (!postDoc.exists || postDoc.data()?['deleted'] == true) {
+            invalidItemIds.add(cartDoc.id);
+            invalidItemNames.add(cartItem['title'] ?? 'Item tidak diketahui');
+          }
+        }
+      }
+
+      // Hapus item yang tidak valid
+      if (invalidItemIds.isNotEmpty) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final itemId in invalidItemIds) {
+          batch.delete(cartRef.doc(itemId));
+        }
+        await batch.commit();
+
+        // Refresh cart provider
+        ref.refresh(cartProvider);
+
+        // Tampilkan notifikasi
+        if (mounted) {
+          _showInvalidItemsRemovedDialog(context, invalidItemNames);
+        }
+      }
+    } catch (e) {
+      print('Error validating cart items: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal memvalidasi keranjang: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isValidating = false;
+        });
+      }
+    }
+  }
+
+  // ✅ DIALOG UNTUK MENAMPILKAN ITEM YANG DIHAPUS
+  void _showInvalidItemsRemovedDialog(BuildContext context, List<String> removedItems) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.orange, size: 24),
+            SizedBox(width: 8),
+            Text('Barang Tidak Tersedia'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Barang berikut sudah tidak tersedia dan telah dihapus dari keranjang:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ...removedItems.take(3).map((itemName) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.close, color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      itemName,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            )),
+            if (removedItems.length > 3)
+              Text(
+                'dan ${removedItems.length - 3} item lainnya...',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ PROCESS CHECKOUT DENGAN VALIDASI TAMBAHAN (DIPERBAIKI)
   Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -439,6 +604,58 @@ class CartScreen extends ConsumerWidget {
         return;
       }
 
+      // ✅ VALIDASI ULANG SEBELUM CHECKOUT
+      await _validateCartItems();
+
+      // ✅ AMBIL CART ITEMS TERBARU SETELAH VALIDASI (TANPA .future)
+      final cartItemsAsyncValue = ref.read(cartProvider);
+
+      // Cek jika masih loading
+      if (cartItemsAsyncValue.isLoading) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sedang memvalidasi keranjang...'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Cek jika ada error
+      if (cartItemsAsyncValue.hasError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${cartItemsAsyncValue.error}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final currentCartItems = cartItemsAsyncValue.value;
+
+      // Null check untuk currentCartItems
+      if (currentCartItems == null || currentCartItems.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Keranjang kosong setelah pengecekan barang'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Hitung ulang total setelah validasi dengan null safety
+      final validTotalAmount = currentCartItems.fold<double>(
+        0,
+            (sum, item) {
+          if (item != null) {
+            return sum + (item.price * item.quantity);
+          }
+          return sum;
+        },
+      );
+
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -446,30 +663,32 @@ class CartScreen extends ConsumerWidget {
 
       final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
-      if (userBalance < totalAmount) {
+      if (userBalance < validTotalAmount) {
         // ✅ SALDO TIDAK MENCUKUPI
-        _showInsufficientBalanceDialog(context, totalAmount, userBalance);
+        _showInsufficientBalanceDialog(context, validTotalAmount, userBalance);
         return;
       }
 
-      // ✅ SALDO MENCUKUPI, PROSES CHECKOUT
-      await _createCartTransaction(cartItems, totalAmount, user.uid);
+      // ✅ SALDO MENCUKUPI, PROSES CHECKOUT DENGAN DATA YANG SUDAH DIVALIDASI
+      await _createCartTransaction(currentCartItems, validTotalAmount, user.uid);
 
       // ✅ KURANGI SALDO USER
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .update({
-        'saldo': FieldValue.increment(-totalAmount),
+        'saldo': FieldValue.increment(-validTotalAmount),
       });
 
-      // ✅ HAPUS SEMUA ITEM DARI CART
-      for (final item in cartItems) {
-        cartNotifier.removeFromCart(item.id);
+      // ✅ HAPUS SEMUA ITEM DARI CART (dengan null check)
+      for (final item in currentCartItems) {
+        if (item != null && item.id != null) {
+          cartNotifier.removeFromCart(item.id);
+        }
       }
 
       // ✅ TAMPILKAN POPUP SUKSES
-      _showCartCheckoutSuccessDialog(context, totalAmount);
+      _showCartCheckoutSuccessDialog(context, validTotalAmount);
 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -486,10 +705,13 @@ class CartScreen extends ConsumerWidget {
     final Map<String, List> itemsBySeller = {};
 
     for (final item in cartItems) {
-      if (!itemsBySeller.containsKey(item.sellerId)) {
-        itemsBySeller[item.sellerId] = [];
+      // Null check untuk item dan sellerId
+      if (item?.sellerId != null) {
+        if (!itemsBySeller.containsKey(item.sellerId)) {
+          itemsBySeller[item.sellerId] = [];
+        }
+        itemsBySeller[item.sellerId]!.add(item);
       }
-      itemsBySeller[item.sellerId]!.add(item);
     }
 
     // ✅ GET USER ADDRESS
@@ -505,7 +727,12 @@ class CartScreen extends ConsumerWidget {
       final sellerItems = itemsBySeller[sellerId]!;
       final sellerTotal = sellerItems.fold<double>(
         0,
-            (sum, item) => sum + (item.price * item.quantity),
+            (sum, item) {
+          if (item != null) {
+            return sum + (item.price * item.quantity);
+          }
+          return sum;
+        },
       );
 
       await FirebaseFirestore.instance.collection('transactions').add({
@@ -516,11 +743,11 @@ class CartScreen extends ConsumerWidget {
         'createdAt': FieldValue.serverTimestamp(),
         'buyerAddress': userAddress, // ✅ TAMBAHAN: Alamat pembeli
         'items': sellerItems.map((item) => {
-          'postId': item.postId,
-          'title': item.title,
-          'price': item.price,
-          'quantity': item.quantity,
-          'imageUrl': item.imageUrl,
+          'postId': item?.postId ?? '',
+          'title': item?.title ?? '',
+          'price': item?.price ?? 0,
+          'quantity': item?.quantity ?? 1,
+          'imageUrl': item?.imageUrl ?? '',
         }).toList(),
         'isEscrow': true,
         'escrowAmount': sellerTotal,
@@ -530,7 +757,7 @@ class CartScreen extends ConsumerWidget {
     }
   }
 
-// ✅ GANTI DIALOG SUCCESS UNTUK CART
+  // ✅ GANTI DIALOG SUCCESS UNTUK CART
   void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
     showDialog(
       context: context,
@@ -567,8 +794,8 @@ class CartScreen extends ConsumerWidget {
                 color: Colors.blue.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Column(
-                children: const [
+              child: const Column(
+                children: [
                   Text(
                     '🔒 Saldo telah dipotong dan disimpan aman',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
@@ -595,7 +822,6 @@ class CartScreen extends ConsumerWidget {
       ),
     );
   }
-
 
   // ✅ DIALOG SALDO TIDAK MENCUKUPI (SAMA SEPERTI POST DETAIL)
   void _showInsufficientBalanceDialog(BuildContext context, double totalAmount, double userBalance) {
@@ -635,7 +861,6 @@ class CartScreen extends ConsumerWidget {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              // TODO: Navigate to top-up page
               context.push('/topup');
             },
             child: const Text('Top Up'),
@@ -644,50 +869,6 @@ class CartScreen extends ConsumerWidget {
       ),
     );
   }
-
-  // ✅ DIALOG CHECKOUT BERHASIL
-  // void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {
-  //   showDialog(
-  //     context: context,
-  //     builder: (context) => AlertDialog(
-  //       title: const Text('Checkout Berhasil'),
-  //       content: Column(
-  //         mainAxisSize: MainAxisSize.min,
-  //         children: [
-  //           const Icon(
-  //             Icons.check_circle,
-  //             size: 64,
-  //             color: Colors.green,
-  //           ),
-  //           const SizedBox(height: 16),
-  //           const Text(
-  //             'Semua item berhasil dibeli!',
-  //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-  //           ),
-  //           const SizedBox(height: 8),
-  //           Text(
-  //             'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
-  //             style: const TextStyle(fontSize: 16),
-  //           ),
-  //           const SizedBox(height: 8),
-  //           const Text(
-  //             'Keranjang telah dikosongkan',
-  //             style: TextStyle(fontSize: 14, color: Colors.grey),
-  //           ),
-  //         ],
-  //       ),
-  //       actions: [
-  //         ElevatedButton(
-  //           onPressed: () {
-  //             Navigator.pop(context);
-  //             context.push('/transaction-history');
-  //           },
-  //           child: const Text('Lihat Riwayat'),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
   void _showDeleteConfirmation(
       BuildContext context,

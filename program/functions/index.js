@@ -2,12 +2,10 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { SDK } = require("@100mslive/server-sdk");
-
 const admin = require("firebase-admin");
-//const serviceAccount = require("./serviceAccountKey.json");
 const axios = require("axios");
-const cron = require('node-cron');
 
+// Initialize Firebase Admin
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.cert({
@@ -18,46 +16,19 @@ if (!admin.apps.length) {
     databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
   });
 }
-//admin.initializeApp({
-//  credential: admin.credential.cert(serviceAccount),
-//});
 
 const app = express();
-//const port = 3000;
-
 app.use(cors());
 app.use(express.json());
 
-// --- Inisialisasi 100ms ---
+// Initialize 100ms
 const accessKey = process.env.ONHUNDREDMS_ACCESS_KEY;
 const appSecret = process.env.ONHUNDREDMS_APP_SECRET;
-
 const hms = new SDK(accessKey, appSecret);
 
-// ENDPOINT BARU: Untuk membuat room secara otomatis
-app.post("/create-room", async (req, res) => {
-  try {
-    const { name, description } = req.body;
-    const roomOptions = {
-      name: name || `Live Jastip - ${new Date().toISOString()}`,
-      description: description || "Sesi live shopping baru",
-      // Anda bisa menambahkan template ID jika Anda membuatnya di dashboard 100ms
-      // template_id: "ID_TEMPLATE_ANDA"
-    };
-
-    const room = await hms.rooms.create(roomOptions);
-    console.log("Room baru dibuat:", room.id);
-    res.json({ roomId: room.id });
-
-  } catch (error) {
-    console.error("Error saat membuat room:", error.message);
-    res.status(500).json({ error: "Gagal membuat room baru." });
-  }
-});
-
-// ✅ CRON JOB LENGKAP: Auto-complete dengan pencairan dana
-cron.schedule('*/2 * * * *', async () => {
-  console.log('[CRON] Menjalankan auto-complete transaksi lengkap...');
+// ✅ FUNGSI CRON JOB 1: AUTO-COMPLETE TRANSACTIONS
+async function runAutoCompleteTransactions() {
+  console.log('[CRON] Menjalankan auto-complete transaksi...');
   try {
     const now = admin.firestore.Timestamp.now();
     const thresholdTime = new admin.firestore.Timestamp(now.seconds - 60, now.nanoseconds);
@@ -65,7 +36,7 @@ cron.schedule('*/2 * * * *', async () => {
     const toSeconds = (val) => {
       if (!val) return null;
       if (val.seconds) return val.seconds;
-      if (val.toDate) return Math.floor(val.toDate() / 1000);
+      if (val.toDate) return Math.floor(val.toDate().getTime() / 1000);
       if (val instanceof Date) return Math.floor(val.getTime() / 1000);
       if (typeof val === 'number') return Math.floor(val / 1000);
       return null;
@@ -92,7 +63,6 @@ cron.schedule('*/2 * * * *', async () => {
 
       if (deliveredSec !== null && completedMissing && deliveredSec <= thresholdTime.seconds) {
         try {
-          // 1. Cek return request aktif
           const activeReturns = await admin.firestore()
             .collection('return_requests')
             .where('transactionId', '==', transactionId)
@@ -105,69 +75,57 @@ cron.schedule('*/2 * * * *', async () => {
             continue;
           }
 
-          // 2. PROSES AUTO-COMPLETE LENGKAP (seperti completeTransaction)
           const sellerId = data.sellerId;
           const escrowAmount = data.escrowAmount ? parseFloat(data.escrowAmount) : 0;
-          const isEscrow = data.isEscrow === true; // boolean check
+          const isEscrow = data.isEscrow === true;
 
-          console.log(`[CRON] Processing ${transactionId}: sellerId=${sellerId}, escrowAmount=${escrowAmount}, isEscrow=${isEscrow}`);
-
-          // 3. Update transaction dengan semua field yang diperlukan
           const transactionUpdateData = {
             status: 'completed',
             completedAt: admin.firestore.FieldValue.serverTimestamp(),
-            rating: null, // Auto-complete = no rating
+            rating: null,
             releaseToSellerAt: admin.firestore.FieldValue.serverTimestamp(),
-            autoCompleted: true, // Flag untuk tracking
+            autoCompleted: true,
             autoCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
           };
 
-          // 4. Batch operation untuk atomicity
           const batch = admin.firestore().batch();
-
-          // Update transaction
           batch.update(doc.ref, transactionUpdateData);
 
-          // 5. PENCAIRAN DANA KE SELLER (jika isEscrow = true)
           if (isEscrow && sellerId && escrowAmount > 0) {
             const sellerRef = admin.firestore().collection('users').doc(sellerId);
             batch.update(sellerRef, {
               saldo: admin.firestore.FieldValue.increment(escrowAmount)
             });
             console.log(`[CRON] Mencairkan ${escrowAmount} ke seller ${sellerId}`);
-          } else {
-            console.log(`[CRON] Skip pencairan: isEscrow=${isEscrow}, escrowAmount=${escrowAmount}`);
           }
 
-          // 6. Commit batch operation
           await batch.commit();
           count++;
-
           console.log(`[CRON] ✅ Auto-completed: ${transactionId}`);
 
         } catch (error) {
           errorCount++;
           console.error(`[CRON] ❌ Error processing ${transactionId}:`, error.message);
-          // Continue dengan transaksi lainnya
         }
       }
     }
 
-    // 7. Summary log
-    console.log(`[CRON] SUMMARY: ${count} completed, ${skippedCount} skipped (retur), ${errorCount} errors`);
+    console.log(`[CRON] SUMMARY: ${count} completed, ${skippedCount} skipped, ${errorCount} errors`);
+    return { completed: count, skipped: skippedCount, errors: errorCount };
 
   } catch (error) {
     console.error('[CRON ERROR] Gagal menjalankan auto-complete:', error);
+    throw error;
   }
-});
+}
 
-cron.schedule('*/2 * * * *', async () => {
+// ✅ FUNGSI CRON JOB 2: AUTO-APPROVE RETURNS
+async function runAutoApproveReturns() {
   console.log('[CRON] Memeriksa retur yang belum direspon...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 70, now.nanoseconds);
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
 
-    // Ambil retur yang menunggu respons seller dan sudah lewat 15 menit
     const returnRequests = await admin.firestore()
       .collection('return_requests')
       .where('status', '==', 'awaitingSellerResponse')
@@ -177,7 +135,7 @@ cron.schedule('*/2 * * * *', async () => {
 
     if (returnRequests.empty) {
       console.log('[CRON] Tidak ada retur yang perlu diproses.');
-      return;
+      return { approved: 0, skipped: 0, errors: 0 };
     }
 
     let done = 0;
@@ -188,46 +146,34 @@ cron.schedule('*/2 * * * *', async () => {
       const rr = rrDoc.data();
       const requestId = rrDoc.id;
       const transactionId = rr.transactionId;
-      const sellerId = rr.sellerId;
-      const buyerReason = rr.reason || '';
-      const sellerResponse = rr.responseReason || '';
 
       try {
-        // Ambil transaksi terkait
         const txRef = admin.firestore().collection('transactions').doc(transactionId);
         const txSnap = await txRef.get();
         if (!txSnap.exists) {
-          console.warn(`[CRON][RET] Skip ${requestId} - transaksi ${transactionId} tidak ditemukan`);
           skipped++;
           continue;
         }
 
         const tx = txSnap.data();
         const buyerId = tx.buyerId;
-        // Gunakan amount sebagai total pengembalian; jika ada escrowAmount dan ingin berbeda, sesuaikan
         const amount = typeof tx.amount === 'number' ? tx.amount : parseFloat(tx.amount || 0);
-        const escrowAmount = typeof tx.escrowAmount === 'number' ? tx.escrowAmount : parseFloat(tx.escrowAmount || amount || 0);
 
-        // Idempoten: jika sudah refunded / return finalApproved, jangan proses ulang
         const alreadyRefunded = tx.status === 'refunded' || tx.refundedAt;
         const rrAlreadyFinal = rr.status === 'finalApproved' || rr.status === 'finalRejected';
         if (alreadyRefunded || rrAlreadyFinal) {
-          console.log(`[CRON][RET] Skip ${requestId} - sudah final/refunded`);
           skipped++;
           continue;
         }
 
-        // Batch untuk atomicity
         const batch = admin.firestore().batch();
 
-        // 1) Update return_request -> finalApproved
         batch.update(rrDoc.ref, {
           status: 'finalApproved',
           respondedAt: admin.firestore.FieldValue.serverTimestamp(),
           responseReason: 'Jastiper tidak merespon dalam 15 menit',
         });
 
-        // 2) Update transaksi -> refunded + completedAt
         batch.update(txRef, {
           status: 'refunded',
           completedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -237,7 +183,6 @@ cron.schedule('*/2 * * * *', async () => {
           refundReason: 'Jastiper tidak merespon dalam 15 menit (auto-approved)',
         });
 
-        // 3) Refund saldo ke buyer
         if (buyerId && amount > 0) {
           const buyerRef = admin.firestore().collection('users').doc(buyerId);
           batch.update(buyerRef, {
@@ -245,122 +190,171 @@ cron.schedule('*/2 * * * *', async () => {
           });
         }
 
-        // 4) Tambah refund_logs untuk audit trail
-        const refundLogRef = admin.firestore().collection('refund_logs').doc();
-        batch.set(refundLogRef, {
-          transactionId,
-          returnRequestId: requestId,
-          buyerId,
-          sellerId,
-          refundAmount: amount,
-          originalAmount: amount,
-          escrowAmount: escrowAmount || amount,
-          reason: 'Final approved return by system (seller no response)',
-          buyerReason: buyerReason,
-          sellerResponse: sellerResponse,
-          processedAt: admin.firestore.FieldValue.serverTimestamp(),
-          processedBy: 'cron',
-          type: 'return_refund',
-        });
-
         await batch.commit();
         done++;
-        console.log(`[CRON][RET] ✅ Auto-approved & refunded ${transactionId} (request ${requestId})`);
+        console.log(`[CRON] ✅ Auto-approved & refunded ${transactionId}`);
 
       } catch (e) {
         errors++;
-        console.error(`[CRON][RET] ❌ Gagal proses request ${requestId}:`, e.message);
-        // Opsional: log error ke collection
-        await admin.firestore().collection('auto_return_errors').add({
-          requestId,
-          transactionId,
-          error: e.message,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          retryable: true,
-        });
+        console.error(`[CRON] ❌ Gagal proses request ${requestId}:`, e.message);
       }
     }
 
-    console.log(`[CRON][RET] SUMMARY: ${done} approved+refunded, ${skipped} skipped, ${errors} errors`);
+    console.log(`[CRON] SUMMARY: ${done} approved, ${skipped} skipped, ${errors} errors`);
+    return { approved: done, skipped, errors };
 
   } catch (error) {
     console.error('[CRON ERROR] Gagal proses retur otomatis:', error);
+    throw error;
   }
-});
+}
 
-
-// --- ENDPOINT BARU: Auto-remove expired cart items ---
-app.get("/cleanup-expired-cart-items", async (req, res) => {
+// ✅ FUNGSI CRON JOB 3: CART CLEANUP
+async function runCartCleanup() {
+  console.log('[CRON] Membersihkan cart dari postingan yang dihapus...');
   try {
-    const now = admin.firestore.Timestamp.now();
-    const usersRef = admin.firestore().collection("users");
-    const usersSnapshot = await usersRef.get();
+    let totalCartItemsRemoved = 0;
+    let totalUsersProcessed = 0;
 
-    let totalDeleted = 0;
+    const usersSnapshot = await admin.firestore().collection('users').get();
 
     for (const userDoc of usersSnapshot.docs) {
-      const cartRef = usersRef.doc(userDoc.id).collection("cart");
-      const cartSnapshot = await cartRef.get();
+      const userId = userDoc.id;
 
-      const batch = admin.firestore().batch();
-      let deletedCount = 0;
+      try {
+        const cartRef = admin.firestore()
+          .collection('users')
+          .doc(userId)
+          .collection('cart');
 
-      for (const itemDoc of cartSnapshot.docs) {
-        const item = itemDoc.data();
-        if (item.deadline && item.deadline.toDate() < now.toDate()) {
-          batch.delete(itemDoc.ref);
-          deletedCount++;
-          totalDeleted++;
+        const cartSnapshot = await cartRef.get();
+        if (cartSnapshot.empty) continue;
+
+        const batch = admin.firestore().batch();
+        let userCartItemsRemoved = 0;
+
+        for (const cartItemDoc of cartSnapshot.docs) {
+          const cartItem = cartItemDoc.data();
+          const postId = cartItem.postId;
+
+          if (!postId) continue;
+
+          const postRef = admin.firestore().collection('posts').doc(postId);
+          const postDoc = await postRef.get();
+
+          if (!postDoc.exists) {
+            batch.delete(cartItemDoc.ref);
+            userCartItemsRemoved++;
+          } else {
+            const postData = postDoc.data();
+            if (postData.deleted === true) {
+              batch.delete(cartItemDoc.ref);
+              userCartItemsRemoved++;
+            }
+          }
         }
-      }
 
-      if (deletedCount > 0) {
-        await batch.commit();
+        if (userCartItemsRemoved > 0) {
+          await batch.commit();
+          totalCartItemsRemoved += userCartItemsRemoved;
+          console.log(`[CART-CLEANUP] User ${userId}: removed ${userCartItemsRemoved} items`);
+        }
+
+        totalUsersProcessed++;
+
+      } catch (userError) {
+        console.error(`[CART-CLEANUP] Error processing user ${userId}:`, userError.message);
       }
     }
 
-    res.json({ success: true, deletedCount: totalDeleted });
+    console.log(`[CART-CLEANUP] SUMMARY: ${totalCartItemsRemoved} items removed from ${totalUsersProcessed} users`);
+    return { removedItems: totalCartItemsRemoved, processedUsers: totalUsersProcessed };
+
   } catch (error) {
-    console.error("Cleanup error:", error);
-    res.status(500).json({ error: "Gagal membersihkan keranjang" });
+    console.error('[CART-CLEANUP ERROR]:', error);
+    throw error;
+  }
+}
+
+// ✅ ENDPOINT CRON UNTUK VERCEL
+app.get('/cron/auto-complete-transactions', async (req, res) => {
+  try {
+    const result = await runAutoCompleteTransactions();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Cron auto-complete error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
+app.get('/cron/auto-approve-returns', async (req, res) => {
+  try {
+    const result = await runAutoApproveReturns();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Cron auto-approve error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
-// ENDPOINT LAMA (DIMODIFIKASI)
+app.get('/cron/cart-cleanup', async (req, res) => {
+  try {
+    const result = await runCartCleanup();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Cron cart cleanup error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ JALANKAN NODE-CRON HANYA SAAT DEVELOPMENT (TIDAK DI VERCEL)
+const isVercel = !!process.env.VERCEL;
+if (!isVercel) {
+  const cron = require('node-cron');
+  console.log('Starting local cron jobs...');
+  cron.schedule('*/2 * * * *', runAutoCompleteTransactions);
+  cron.schedule('*/2 * * * *', runAutoApproveReturns);
+  cron.schedule('*/5 * * * *', runCartCleanup);
+}
+
+// ✅ ENDPOINT LAINNYA (TETAP SAMA)
+app.post("/create-room", async (req, res) => {
+  try {
+    const { name, description } = req.body;
+    const roomOptions = {
+      name: name || `Live Jastip - ${new Date().toISOString()}`,
+      description: description || "Sesi live shopping baru",
+    };
+    const room = await hms.rooms.create(roomOptions);
+    res.json({ roomId: room.id });
+  } catch (error) {
+    console.error("Error saat membuat room:", error.message);
+    res.status(500).json({ error: "Gagal membuat room baru." });
+  }
+});
+
 app.post("/get100msToken", async (req, res) => {
   try {
     const { roomId, userId, role } = req.body;
-
     if (!roomId || !userId || !role) {
       return res.status(400).json({ error: "Parameter wajib tidak ada." });
     }
-
-    const options = {
-      userId: userId,
-      roomId: roomId,
-      role: role,
-    };
-
+    const options = { userId, roomId, role };
     const token = await hms.auth.getAuthToken(options);
-    res.json({ token: token });
-
+    res.json({ token });
   } catch (error) {
     console.error("Error:", error.message);
     res.status(500).json({ error: "Gagal membuat token." });
   }
 });
 
-// ===== NOTIFIKASI PENGUMUMAN BROADCAST =====
 app.post("/send-announcement", async (req, res) => {
   try {
     const { title, body, imageUrl, senderId } = req.body;
-
     if (!title || !body || !senderId) {
       return res.status(400).json({ error: "Parameter tidak lengkap." });
     }
 
-    // Ambil semua FCM token dari semua user
     const usersSnapshot = await admin.firestore().collection('users').get();
     const tokens = [];
     const userNotifications = [];
@@ -368,21 +362,13 @@ app.post("/send-announcement", async (req, res) => {
     for (const userDoc of usersSnapshot.docs) {
       const userData = userDoc.data();
       const fcmToken = userData.fcmToken;
-
-      if (fcmToken && userDoc.id !== senderId) { // Jangan kirim ke sender sendiri
+      if (fcmToken && userDoc.id !== senderId) {
         tokens.push(fcmToken);
-
-        // Siapkan data untuk disimpan ke notifications collection setiap user
         userNotifications.push({
           userId: userDoc.id,
           notificationData: {
-            title: title,
-            body: body,
-            imageUrl: imageUrl || null,
-            type: 'announcement',
-            senderId: senderId,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            isRead: false,
+            title, body, imageUrl: imageUrl || null, type: 'announcement',
+            senderId, createdAt: admin.firestore.FieldValue.serverTimestamp(), isRead: false,
           }
         });
       }
@@ -392,73 +378,26 @@ app.post("/send-announcement", async (req, res) => {
       return res.status(404).json({ error: "Tidak ada penerima ditemukan." });
     }
 
-    // Kirim notifikasi push ke semua device (batch)
     const messages = tokens.map(token => ({
-      notification: {
-        title: title,
-        body: body,
-        ...(imageUrl && { image: imageUrl }), // Tambahkan gambar jika ada
-      },
-      android: {
-        notification: {
-          ...(imageUrl && { image: imageUrl }),
-          priority: 'high',
-          defaultSound: true,
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-          },
-        },
-        ...(imageUrl && {
-          fcm_options: {
-            image: imageUrl,
-          },
-        }),
-      },
-      data: {
-        type: 'announcement',
-        title: title,
-        body: body,
-        ...(imageUrl && { imageUrl: imageUrl }),
-        senderId: senderId,
-      },
-      token: token,
+      notification: { title, body, ...(imageUrl && { image: imageUrl }) },
+      data: { type: 'announcement', title, body, ...(imageUrl && { imageUrl }), senderId },
+      token,
     }));
 
-    // Kirim notifikasi push menggunakan sendEach untuk batch processing
     const response = await admin.messaging().sendEach(messages);
-
-    console.log(`[ANNOUNCEMENT] Berhasil kirim ke ${response.successCount}/${messages.length} device`);
-
-    // Simpan ke notifications collection setiap user (batch write)
     const batch = admin.firestore().batch();
 
     for (const userNotif of userNotifications) {
       const notifRef = admin.firestore()
-        .collection('users')
-        .doc(userNotif.userId)
-        .collection('notifications')
-        .doc(); // Auto-generate ID
-
+        .collection('users').doc(userNotif.userId).collection('notifications').doc();
       batch.set(notifRef, userNotif.notificationData);
     }
-
     await batch.commit();
 
-    console.log(`[ANNOUNCEMENT] Tersimpan ke ${userNotifications.length} user notifications`);
-
     res.status(200).json({
-      success: true,
-      message: "Pengumuman berhasil dikirim",
-      sentTo: response.successCount,
-      totalRecipients: messages.length,
-      failedCount: response.failureCount,
+      success: true, message: "Pengumuman berhasil dikirim",
+      sentTo: response.successCount, totalRecipients: messages.length,
     });
-
   } catch (error) {
     console.error("Gagal mengirim pengumuman:", error);
     res.status(500).json({ error: "Gagal mengirim pengumuman." });
@@ -468,68 +407,39 @@ app.post("/send-announcement", async (req, res) => {
 app.post("/sendNotification", async (req, res) => {
   try {
     const { recipientId, senderName, messageText } = req.body;
-
     if (!recipientId || !senderName || !messageText) {
       return res.status(400).json({ error: "Parameter tidak lengkap." });
     }
 
-    // 1. Ambil FCM Token dari profil penerima di Firestore
     const recipientDoc = await admin.firestore().collection('users').doc(recipientId).get();
     if (!recipientDoc.exists) {
-        return res.status(404).json({ error: "Penerima tidak ditemukan." });
+      return res.status(404).json({ error: "Penerima tidak ditemukan." });
     }
-    const fcmToken = recipientDoc.data().fcmToken;
 
+    const fcmToken = recipientDoc.data().fcmToken;
     if (!fcmToken) {
       return res.status(404).json({ error: "Token FCM penerima tidak ditemukan." });
     }
 
-    // 2. Buat payload notifikasi
     const payload = {
-      notification: {
-        title: `Pesan baru dari ${senderName}`,
-        body: messageText,
-      },
-      data: {
-        type: 'chat',
-        senderName: senderName,
-        messageText: messageText,
-      },
+      notification: { title: `Pesan baru dari ${senderName}`, body: messageText },
+      data: { type: 'chat', senderName, messageText },
       token: fcmToken,
     };
 
-    // 3. Kirim notifikasi push
     await admin.messaging().send(payload);
+    await admin.firestore().collection('users').doc(recipientId).collection('notifications').add({
+      title: `Pesan baru dari ${senderName}`, body: messageText, type: 'chat', senderName,
+      data: { messageText }, createdAt: admin.firestore.FieldValue.serverTimestamp(), isRead: false,
+    });
 
-    // 4. ✅ BARU: Simpan ke notifications collection penerima
-    await admin.firestore()
-      .collection('users')
-      .doc(recipientId)
-      .collection('notifications')
-      .add({
-        title: `Pesan baru dari ${senderName}`,
-        body: messageText,
-        type: 'chat',
-        senderName: senderName,
-        data: {
-          messageText: messageText,
-        },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        isRead: false,
-      });
-
-    console.log("Chat notification berhasil dikirim dan disimpan ke:", recipientId);
     res.status(200).json({ success: true, message: "Notifikasi terkirim dan tersimpan." });
-
   } catch (error) {
     console.error("Gagal mengirim notifikasi:", error);
     res.status(500).json({ error: "Gagal mengirim notifikasi." });
   }
 });
 
-
-
-// 1. Endpoint untuk membuat invoice Xendit
 app.post("/create-invoice", async (req, res) => {
   try {
     const { amount, userId, email } = req.body;
@@ -540,49 +450,29 @@ app.post("/create-invoice", async (req, res) => {
     const xenditSecretKey = process.env.XENDIT_SECRET_KEY;
     const externalId = `topup-${userId}-${Date.now()}`;
 
-    const response = await axios.post(
-      "https://api.xendit.co/v2/invoices",
-      {
-        external_id: externalId,
-        amount: amount,
-        payer_email: email,
-        description: `Top-up saldo untuk user ${userId}`,
-        success_redirect_url: `https://ngoper.app/topup/success`,
-      },
-      {
-        auth: {
-          username: xenditSecretKey,
-          password: ''
-        }
-      }
-    );
+    const response = await axios.post("https://api.xendit.co/v2/invoices", {
+      external_id: externalId, amount, payer_email: email,
+      description: `Top-up saldo untuk user ${userId}`,
+      success_redirect_url: `https://ngoper.app/topup/success`,
+    }, {
+      auth: { username: xenditSecretKey, password: '' }
+    });
 
-    // Simpan data invoice ke Firestore untuk referensi
     await admin.firestore().collection('invoices').doc(externalId).set({
-      userId: userId,
-      amount: amount,
-      status: 'PENDING',
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId, amount, status: 'PENDING', createdAt: admin.firestore.FieldValue.serverTimestamp(),
       xenditInvoiceId: response.data.id
     });
 
-    res.json({
-      invoiceUrl: response.data.invoice_url,
-      externalId: externalId
-    });
-
+    res.json({ invoiceUrl: response.data.invoice_url, externalId });
   } catch (error) {
     console.error("Error creating Xendit invoice:", error.response?.data || error.message);
     res.status(500).json({ error: "Gagal membuat invoice." });
   }
 });
 
-// 2. Endpoint BARU untuk mengecek status invoice
 app.get("/check-invoice/:externalId", async (req, res) => {
   try {
     const { externalId } = req.params;
-
-    // Cek dari Firestore dulu
     const invoiceDoc = await admin.firestore().collection('invoices').doc(externalId).get();
 
     if (!invoiceDoc.exists) {
@@ -590,69 +480,44 @@ app.get("/check-invoice/:externalId", async (req, res) => {
     }
 
     const invoiceData = invoiceDoc.data();
-
-    // Jika sudah PAID di Firestore, langsung return
     if (invoiceData.status === 'PAID') {
       return res.json({ status: 'PAID' });
     }
 
-    // Jika belum, cek ke Xendit API
     const xenditSecretKey = process.env.XENDIT_SECRET_KEY;
-    const xenditInvoiceId = invoiceData.xenditInvoiceId;
-
-    const response = await axios.get(
-      `https://api.xendit.co/v2/invoices/${xenditInvoiceId}`,
-      {
-        auth: {
-          username: xenditSecretKey,
-          password: ''
-        }
-      }
-    );
-
-    const status = response.data.status;
-
-    // Update status di Firestore
-    await admin.firestore().collection('invoices').doc(externalId).update({
-      status: status,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    const response = await axios.get(`https://api.xendit.co/v2/invoices/${invoiceData.xenditInvoiceId}`, {
+      auth: { username: xenditSecretKey, password: '' }
     });
 
-    // Jika PAID, update saldo user juga (backup jika webhook belum sampai)
+    const status = response.data.status;
+    await admin.firestore().collection('invoices').doc(externalId).update({
+      status, updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
     if (status === 'PAID' && invoiceData.status !== 'PAID') {
       const parts = externalId.split('-');
       const userId = parts[1];
-
       await admin.firestore().collection('users').doc(userId).update({
         saldo: admin.firestore.FieldValue.increment(invoiceData.amount)
       });
-
-      console.log(`[CHECK-INVOICE] Saldo user ${userId} ditambah ${invoiceData.amount}`);
     }
 
-    res.json({ status: status });
-
+    res.json({ status });
   } catch (error) {
     console.error("Error checking invoice:", error.response?.data || error.message);
     res.status(500).json({ error: "Gagal memeriksa status invoice." });
   }
 });
 
-// 3. Endpoint untuk menerima webhook dari Xendit
 app.post("/xendit-webhook", async (req, res) => {
   const xenditCallbackToken = process.env.XENDIT_WEBHOOK_TOKEN;
   const receivedToken = req.headers['x-callback-token'];
 
-  // Verifikasi token webhook (PENTING untuk keamanan)
   if (xenditCallbackToken && receivedToken !== xenditCallbackToken) {
-    console.log("Invalid webhook token received");
-    return res.status(403).send("Forbidden: Invalid callback token");
+    return res.status(403).send("Forbidden");
   }
 
   const data = req.body;
-  console.log("=== WEBHOOK RECEIVED ===");
-  console.log(JSON.stringify(data, null, 2));
-
   if (data.status === 'PAID') {
     const externalId = data.external_id;
     const amount = data.paid_amount || data.amount;
@@ -663,20 +528,12 @@ app.post("/xendit-webhook", async (req, res) => {
 
       if (userId && amount) {
         try {
-          // Update status invoice di Firestore
           await admin.firestore().collection('invoices').doc(externalId).update({
-            status: 'PAID',
-            paidAt: admin.firestore.FieldValue.serverTimestamp(),
-            paidAmount: amount
+            status: 'PAID', paidAt: admin.firestore.FieldValue.serverTimestamp(), paidAmount: amount
           });
-
-          // Update saldo user
-          const userRef = admin.firestore().collection('users').doc(userId);
-          await userRef.update({
+          await admin.firestore().collection('users').doc(userId).update({
             saldo: admin.firestore.FieldValue.increment(amount)
           });
-
-          console.log(`[WEBHOOK] Saldo user ${userId} berhasil ditambah sebesar ${amount}`);
         } catch (dbError) {
           console.error("Error updating database:", dbError);
           return res.status(500).send("Error updating database");
@@ -684,12 +541,7 @@ app.post("/xendit-webhook", async (req, res) => {
       }
     }
   }
-
   res.status(200).send("Webhook received");
 });
 
-
-//app.listen(port, () => {
-//  console.log(`Backend server berjalan di http://localhost:${port}`);
-//});
 module.exports = app;

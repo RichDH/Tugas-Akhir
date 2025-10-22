@@ -41,6 +41,7 @@ class _EditPostScreenState extends ConsumerState<EditPostScreen> {
   PostType _selectedPostType = PostType.jastip;
   Condition _selectedCondition = Condition.baru;
   String? _selectedCategory;
+  bool _isRequestActive = true;
 
   // Media yang dipilih user (baru)
   List<File> _selectedImages = [];
@@ -75,7 +76,7 @@ class _EditPostScreenState extends ConsumerState<EditPostScreen> {
       _selectedPostType = post.type;
       _selectedCondition = post.condition ?? Condition.baru;
       _selectedCategory = post.category;
-
+      _isRequestActive = post.isActive;
       _titleController.text = post.title;
       _descriptionController.text = post.description ?? '';
       _priceController.text = post.price?.toString() ?? '';
@@ -317,6 +318,7 @@ class _EditPostScreenState extends ConsumerState<EditPostScreen> {
         imageUrls: finalImageUrls,
         videoUrl: finalVideoUrl,
         updatedAt: Timestamp.now(),
+        isActive: _isRequestActive,
       );
 
       await ref.read(postNotifierProvider.notifier).updatePost(updatedPost);
@@ -673,6 +675,71 @@ class _EditPostScreenState extends ConsumerState<EditPostScreen> {
                           decoration: const InputDecoration(labelText: 'Batas Jumlah Offer', border: OutlineInputBorder()),
                           keyboardType: TextInputType.number,
                           validator: (v) => (v == null || v.isEmpty) ? 'Batas offer tidak boleh kosong' : null,
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Status Request',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    _isRequestActive ? Icons.check_circle : Icons.cancel,
+                                    color: _isRequestActive ? Colors.green : Colors.red,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _isRequestActive ? 'Aktif - Menerima penawaran' : 'Tidak Aktif - Tidak menerima penawaran',
+                                    style: TextStyle(
+                                      color: _isRequestActive ? Colors.green : Colors.red,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () {
+                                    setState(() {
+                                      _isRequestActive = !_isRequestActive;
+                                    });
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _isRequestActive ? Colors.red.shade100 : Colors.green.shade100,
+                                    foregroundColor: _isRequestActive ? Colors.red.shade700 : Colors.green.shade700,
+                                    side: BorderSide(
+                                      color: _isRequestActive ? Colors.red.shade300 : Colors.green.shade300,
+                                    ),
+                                  ),
+                                  icon: Icon(_isRequestActive ? Icons.pause : Icons.play_arrow),
+                                  label: Text(_isRequestActive ? 'Nonaktifkan Request' : 'Aktifkan Request'),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _isRequestActive
+                                    ? 'Request ini masih menerima penawaran dari jastiper'
+                                    : 'Request ini tidak lagi menerima penawaran baru',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 16),
                       ],
