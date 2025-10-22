@@ -70,6 +70,9 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
   }
 
   Widget _buildHeader(Post post) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isOwnPost = currentUser?.uid == post.userId;
+
     return Padding(
       padding: const EdgeInsets.all(12.0),
       child: Row(
@@ -99,14 +102,108 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
               ],
             ),
           ),
-          IconButton(
+          PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
-            onPressed: () {},
+            onSelected: (value) => _handleMenuAction(value, post),
+            itemBuilder: (context) {
+              if (isOwnPost) {
+                return [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit, color: Colors.blue),
+                        SizedBox(width: 8),
+                        Text('Edit'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Hapus'),
+                      ],
+                    ),
+                  ),
+                ];
+              } else {
+                return [
+                  const PopupMenuItem(
+                    value: 'report',
+                    child: Row(
+                      children: [
+                        Icon(Icons.flag, color: Colors.orange),
+                        SizedBox(width: 8),
+                        Text('Laporkan'),
+                      ],
+                    ),
+                  ),
+                ];
+              }
+            },
           ),
         ],
       ),
     );
   }
+
+  void _handleMenuAction(String action, Post post) {
+    switch (action) {
+      case 'edit':
+        context.push('/edit-post/${post.id}');
+        break;
+      case 'delete':
+        _showDeleteConfirmation(post);
+        break;
+      case 'report':
+        _showReportDialog(post);
+        break;
+    }
+  }
+
+  void _showDeleteConfirmation(Post post) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Post'),
+        content: Text('Apakah Anda yakin ingin menghapus "${post.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(postNotifierProvider.notifier).deletePost(post.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Post berhasil dihapus'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReportDialog(Post post) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Fitur laporan akan segera tersedia'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+  }
+
+
 
   Widget _buildMedia(Post post) {
     final hasVideo = post.videoUrl?.isNotEmpty == true;

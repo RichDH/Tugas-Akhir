@@ -34,6 +34,8 @@ class Post extends Equatable {
 
   final int? maxOffers;
   final bool isActive;
+  final bool deleted;
+  final Timestamp? deletedAt;
 
   const Post({
     required this.id,
@@ -64,6 +66,8 @@ class Post extends Equatable {
     this.likedBy = const [],
     this.maxOffers,
     this.isActive = true,
+    this.deleted = false,
+    this.deletedAt,
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -98,16 +102,18 @@ class Post extends Equatable {
       likedBy: List<String>.from(data['likedBy'] ?? []),
       maxOffers: data['maxOffers'] as int?,
       isActive: data['isActive'] as bool? ?? true,
+      deleted: data['deleted'] as bool? ?? false,
+      deletedAt: data['deletedAt'] as Timestamp?,
     );
   }
 
-  // ✅ SAFE DOUBLE PARSING
+  // SAFE DOUBLE PARSING
   static double? _parseDouble(dynamic value) {
     if (value == null) return null;
     if (value is double) return value;
     if (value is int) return value.toDouble();
     if (value is String) {
-      return double.tryParse(value); // ✅ GUNAKAN tryParse BUKAN toDouble()
+      return double.tryParse(value);
     }
     return null;
   }
@@ -158,6 +164,8 @@ class Post extends Equatable {
       'likedBy': likedBy,
       'maxOffers': maxOffers,
       'isActive': isActive,
+      'deleted': deleted,
+      'deletedAt': deletedAt,
     };
   }
 
@@ -190,6 +198,8 @@ class Post extends Equatable {
     List<String>? likedBy,
     int? maxOffers,
     bool? isActive,
+    bool? deleted,
+    Timestamp? deletedAt,
   }) {
     return Post(
       id: id ?? this.id,
@@ -220,6 +230,8 @@ class Post extends Equatable {
       likedBy: likedBy ?? this.likedBy,
       maxOffers: maxOffers ?? this.maxOffers,
       isActive: isActive ?? this.isActive,
+      deleted: deleted ?? this.deleted,
+      deletedAt: deletedAt ?? this.deletedAt,
     );
   }
 
@@ -229,6 +241,6 @@ class Post extends Equatable {
     price, location, locationCity, locationLat, locationLng,
     condition, brand, size, weight, additionalNotes, imageUrls,
     videoUrl, createdAt, updatedAt, isLiked, likesCount,
-    commentsCount, currentOffers, likedBy, maxOffers, isActive,
+    commentsCount, currentOffers, likedBy, maxOffers, isActive, deleted, deletedAt
   ];
 }

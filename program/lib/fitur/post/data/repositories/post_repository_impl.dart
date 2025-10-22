@@ -152,12 +152,66 @@ class PostRepositoryImpl implements PostRepository {
     }
   }
 
-// Di dalam PostRepositoryImpl
+  @override
+  Future<void> updatePost(Post post) async {
+    try {
+      await _firestore
+          .collection('posts')
+          .doc(post.id)
+          .update(post.toFirestore());
+      print('Post updated successfully in Firestore');
+    } catch (e) {
+      print('Error updating post: $e');
+      throw Exception('Gagal memperbarui post: $e');
+    }
+  }
+
+  @override
+  Future<void> deletePost(String postId) async {
+    try {
+      await _firestore
+          .collection('posts')
+          .doc(postId)
+          .update({
+        'deleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+      });
+      print('Post soft deleted successfully in Firestore');
+    } catch (e) {
+      print('Error deleting post: $e');
+      throw Exception('Gagal menghapus post: $e');
+    }
+  }
+
+// ✅ TAMBAHKAN METHOD GET POST BY ID
+  @override
+  Future<Post?> getPostById(String postId) async {
+    try {
+      final doc = await _firestore
+          .collection('posts')
+          .doc(postId)
+          .get();
+
+      if (doc.exists) {
+        return Post.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting post by ID: $e');
+      throw Exception('Gagal mengambil post: $e');
+    }
+  }
+
+
   @override
   Stream<List<Post>> getPosts() {
     try {
       final postsCollection = _firestore
           .collection('posts')
+          .where(Filter.or(
+            Filter('deleted', isEqualTo: false),
+            Filter('deleted', isEqualTo: null),
+          ))
           .orderBy('createdAt', descending: true);
 
       return postsCollection.snapshots().map((snapshot) {

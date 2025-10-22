@@ -47,6 +47,7 @@ import '../fitur/jualbeli/presentation/screens/return_confirmation_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_detail_screen.dart';
 import '../fitur/jualbeli/presentation/screens/transaction_history_screen.dart';
 import '../fitur/notification/presentation/screens/notification_screen.dart';
+import '../fitur/post/presentation/screens/edit_post_screen.dart';
 import '../fitur/profile/presentation/screens/edit_profile_screen.dart';
 import '../fitur/profile/presentation/screens/history_screen.dart';
 import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
@@ -75,7 +76,14 @@ final goRouter = Provider<GoRouter>((ref) {
           return PostDetailScreen(postId: postId);
         },
       ),
-
+      GoRoute(
+        path: '/edit-post/:postId',
+        name: 'edit-post',
+        builder: (context, state) {
+          final postId = state.pathParameters['postId']!;
+          return EditPostScreen(postId: postId);
+        },
+      ),
 
       GoRoute(
         path: '/chat-list',

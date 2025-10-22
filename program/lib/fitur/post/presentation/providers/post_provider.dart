@@ -5,7 +5,6 @@ import '../../../../app/providers/firebase_providers.dart';
 import '../../data/repositories/post_repository_impl.dart';
 import '../../domain/entities/post.dart';
 
-// ✅ PROVIDER UNTUK GET POST BY ID
 final postByIdProvider = StreamProvider.family<Post?, String>((ref, postId) {
   final isAuthenticated = ref.watch(isAuthenticatedProvider);
   if (!isAuthenticated) return Stream.value(null);
@@ -20,7 +19,6 @@ final postByIdProvider = StreamProvider.family<Post?, String>((ref, postId) {
   });
 });
 
-// ✅ PERBAIKAN USER REQUESTS PROVIDER
 final userRequestsProvider = StreamProvider.family<List<Post>, String>((ref, userId) {
   final isAuthenticated = ref.watch(isAuthenticatedProvider);
   if (!isAuthenticated || userId.isEmpty) return Stream.value([]);
@@ -43,18 +41,14 @@ final userRequestsProvider = StreamProvider.family<List<Post>, String>((ref, use
   });
 });
 
-// ✅ PERBAIKAN POSTS PROVIDER - YANG UTAMA
 final postsProvider = StreamProvider<List<Post>>((ref) {
-  // ✅ CEK AUTHENTICATION STATE DULU
   final isAuthenticated = ref.watch(isAuthenticatedProvider);
   final currentUser = ref.watch(currentUserProvider);
 
-  // ✅ JIKA BELUM LOGIN, RETURN EMPTY STREAM
   if (!isAuthenticated || currentUser == null) {
     return Stream.value(<Post>[]);
   }
 
-  // ✅ DELAY SEBENTAR UNTUK MEMASTIKAN AUTH STATE STABLE
   return Stream.fromFuture(
       Future.delayed(const Duration(milliseconds: 500))
   ).asyncExpand((_) {
@@ -65,18 +59,23 @@ final postsProvider = StreamProvider<List<Post>>((ref) {
         .map((snapshot) {
       final currentUserId = currentUser.uid;
 
-      return snapshot.docs.map((doc) {
+      return snapshot.docs
+          .where((doc) {
+        final data = doc.data();
+        return !data.containsKey('deleted') || data['deleted'] == false;
+      })
+          .map((doc) {
         final data = doc.data();
         final likedBy = List<String>.from(data['likedBy'] ?? []);
         final isLiked = likedBy.contains(currentUserId);
 
-        // Create post dengan isLiked yang benar
         final post = Post.fromFirestore(doc);
         return post.copyWith(isLiked: isLiked);
       }).toList();
     });
   });
 });
+
 
 // REST OF THE CODE REMAINS THE SAME...
 final postNotifierProvider = StateNotifierProvider<PostNotifier, AsyncValue<void>>((ref) {
@@ -148,6 +147,33 @@ class PostNotifier extends StateNotifier<AsyncValue<void>> {
       rethrow;
     }
   }
+
+  Future<void> updatePost(Post post) async {
+    state = const AsyncValue.loading();
+
+    try {
+      final repository = PostRepositoryImpl(FirebaseFirestore.instance);
+      await repository.updatePost(post);
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      print('Error updating post: $e');
+      state = AsyncValue.error(e, stack);
+    }
+  }
+
+  Future<void> deletePost(String postId) async {
+    state = const AsyncValue.loading();
+    try {
+      final repository = PostRepositoryImpl(FirebaseFirestore.instance);
+      await repository.deletePost(postId);
+      state = const AsyncValue.data(null);
+    } catch (e, stack) {
+      print('Error deleting post: $e');
+      state = AsyncValue.error(e, stack);
+    }
+  }
+
+
 }
 
 // ✅ CREATE POST PROVIDER

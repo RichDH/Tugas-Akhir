@@ -9,5 +9,8 @@ abstract class PostRepository {
   Future<String> uploadPostVideo(String videoPath, String userId);
   /// Mendapatkan stream semua post (diurutkan terbaru)
   Stream<List<Post>> getPosts();
+  Future<void> updatePost(Post post);
+  Future<void> deletePost(String postId);
+  Future<Post?> getPostById(String postId);
 
 }

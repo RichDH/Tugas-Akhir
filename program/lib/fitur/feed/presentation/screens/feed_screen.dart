@@ -238,7 +238,7 @@ class FeedScreen extends ConsumerWidget {
           },
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: filteredPosts.length > 20 ? 20 : filteredPosts.length, // ✅ BATASI 20 POST PERTAMA
+            itemCount: filteredPosts.length > 20 ? 20 : filteredPosts.length,
             itemBuilder: (context, index) {
               final post = filteredPosts[index];
               print('🎯 Rendering post ${post.id}: ${post.title}');

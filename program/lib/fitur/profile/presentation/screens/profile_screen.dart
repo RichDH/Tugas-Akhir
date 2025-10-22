@@ -10,6 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../chat/presentation/providers/chat_provider.dart';
+import '../../../post/domain/entities/post.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final String? userId;
@@ -28,12 +29,22 @@ class ProfileScreen extends ConsumerWidget {
 
     final userProfileAsync = ref.watch(userProfileStreamProvider(targetUserId));
     final userPostsAsync = ref.watch(userPostsStreamProvider(targetUserId));
-    final followersCount = ref.watch(followersCountStreamProvider(targetUserId)).value ?? 0;
-    final followingCount = ref.watch(followingCountStreamProvider(targetUserId)).value ?? 0;
     final userRequestsAsync = ref.watch(userRequestsStreamProvider(targetUserId));
     final userShortsAsync = ref.watch(userShortsStreamProvider(targetUserId));
     final userLiveHistoryAsync = ref.watch(userLiveHistoryStreamProvider(targetUserId));
-    final totalPostsCount = (userPostsAsync.value?.docs.length ?? 0) + (userRequestsAsync.value?.docs.length ?? 0);
+    final followersCount = ref.watch(followersCountStreamProvider(targetUserId)).value ?? 0;
+    final followingCount = ref.watch(followingCountStreamProvider(targetUserId)).value ?? 0;
+
+    // FILTER CLIENT-SIDE: tampilkan jika deleted tidak ada ATAU deleted == false
+    int _safeCount(AsyncValue<QuerySnapshot> av) {
+      final docs = av.value?.docs ?? const [];
+      return docs.where((d) {
+        final data = d.data() as Map<String, dynamic>;
+        return !data.containsKey('deleted') || data['deleted'] == false;
+      }).length;
+    }
+
+    final totalPostsCount = _safeCount(userPostsAsync) + _safeCount(userRequestsAsync);
 
     return Scaffold(
       appBar: AppBar(
@@ -62,7 +73,6 @@ class ProfileScreen extends ConsumerWidget {
                     final formattedSaldo = NumberFormat.decimalPattern('id_ID').format(saldo);
 
                     return <PopupMenuEntry<String>>[
-                      // SALDO INFO
                       PopupMenuItem<String>(
                         enabled: false,
                         child: Padding(
@@ -70,153 +80,66 @@ class ProfileScreen extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Saldo Anda',
-                                style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                              ),
+                              Text('Saldo Anda', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
                               const SizedBox(height: 4),
                               Text(
                                 'Rp $formattedSaldo',
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
                         ),
                       ),
                       const PopupMenuDivider(),
-
-                      // TOP UP
                       const PopupMenuItem<String>(
                         value: 'topup',
-                        child: ListTile(
-                          leading: Icon(Icons.add_card, color: Colors.green),
-                          title: Text('Top Up Saldo'),
-                        ),
+                        child: ListTile(leading: Icon(Icons.add_card, color: Colors.green), title: Text('Top Up Saldo')),
                       ),
-
-                      // VERIFICATION STATUS
                       if (verificationStatus == 'verified')
                         const PopupMenuItem<String>(
                           enabled: false,
-                          child: ListTile(
-                            leading: Icon(Icons.verified, color: Colors.green),
-                            title: Text('Akun Terverifikasi'),
-                          ),
+                          child: ListTile(leading: Icon(Icons.verified, color: Colors.green), title: Text('Akun Terverifikasi')),
                         )
                       else if (verificationStatus == 'pending')
                         const PopupMenuItem<String>(
                           enabled: false,
-                          child: ListTile(
-                            leading: Icon(Icons.hourglass_top, color: Colors.orange),
-                            title: Text('Verifikasi Ditinjau'),
-                          ),
+                          child: ListTile(leading: Icon(Icons.hourglass_top, color: Colors.orange), title: Text('Verifikasi Ditinjau')),
                         )
                       else
                         const PopupMenuItem<String>(
                           value: 'verification',
-                          child: ListTile(
-                            leading: Icon(Icons.security, color: Colors.blue),
-                            title: Text('Verifikasi Akun'),
-                          ),
+                          child: ListTile(leading: Icon(Icons.security, color: Colors.blue), title: Text('Verifikasi Akun')),
                         ),
                       const PopupMenuItem<String>(
                         value: 'chat-admin',
-                        child: ListTile(
-                          leading: Icon(Icons.support_agent, color: Colors.blue),
-                          title: Text('Chat Admin'),
-                        ),
+                        child: ListTile(leading: Icon(Icons.support_agent, color: Colors.blue), title: Text('Chat Admin')),
                       ),
                       const PopupMenuDivider(),
-
-                      // ✅ BUSINESS SECTION - TAMBAHAN BARU
                       PopupMenuItem<String>(
                         enabled: false,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Text(
-                            'Bisnis & Pesanan',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: Text('Bisnis & Pesanan', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold)),
                         ),
                       ),
-
-                      // ✅ LIST INTERESTED ORDER - MENU BARU
                       const PopupMenuItem<String>(
                         value: 'list-interested-order',
-                        child: ListTile(
-                          leading: Icon(Icons.assignment_turned_in, color: Colors.orange),
-                          title: Text('List Pesanan'),
-                          subtitle: Text('Kelola pesanan masuk'),
-                        ),
+                        child: ListTile(leading: Icon(Icons.assignment_turned_in, color: Colors.orange), title: Text('List Pesanan'), subtitle: Text('Kelola pesanan masuk')),
                       ),
-
-                      // CART
-                      const PopupMenuItem<String>(
-                        value: 'cart',
-                        child: ListTile(
-                          leading: Icon(Icons.shopping_cart, color: Colors.blue),
-                          title: Text('Keranjang'),
-                        ),
-                      ),
-
+                      const PopupMenuItem<String>(value: 'cart', child: ListTile(leading: Icon(Icons.shopping_cart, color: Colors.blue), title: Text('Keranjang'))),
                       const PopupMenuDivider(),
-
-                      // HISTORY SECTION
                       PopupMenuItem<String>(
                         enabled: false,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4.0),
-                          child: Text(
-                            'Riwayat',
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: Text('Riwayat', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold)),
                         ),
                       ),
-
-                      const PopupMenuItem<String>(
-                        value: 'transaction-history',
-                        child: ListTile(
-                          leading: Icon(Icons.history, color: Colors.green),
-                          title: Text('Riwayat Transaksi'),
-                        ),
-                      ),
-
-                      const PopupMenuItem<String>(
-                        value: 'request-history',
-                        child: ListTile(
-                          leading: Icon(Icons.request_page, color: Colors.purple),
-                          title: Text('Riwayat Request'),
-                        ),
-                      ),
-
-                      const PopupMenuItem<String>(
-                        value: 'return-response-list',
-                        child: ListTile(
-                          leading: Icon(Icons.assignment_return, color: Colors.red),
-                          title: Text('Return Response'),
-                        ),
-                      ),
-
+                      const PopupMenuItem<String>(value: 'transaction-history', child: ListTile(leading: Icon(Icons.history, color: Colors.green), title: Text('Riwayat Transaksi'))),
+                      const PopupMenuItem<String>(value: 'request-history', child: ListTile(leading: Icon(Icons.request_page, color: Colors.purple), title: Text('Riwayat Request'))),
+                      const PopupMenuItem<String>(value: 'return-response-list', child: ListTile(leading: Icon(Icons.assignment_return, color: Colors.red), title: Text('Return Response'))),
                       const PopupMenuDivider(),
-
-                      // LOGOUT
-                      const PopupMenuItem<String>(
-                        value: 'logout',
-                        child: ListTile(
-                          leading: Icon(Icons.logout, color: Colors.red),
-                          title: Text('Logout', style: TextStyle(color: Colors.red)),
-                        ),
-                      ),
+                      const PopupMenuItem<String>(value: 'logout', child: ListTile(leading: Icon(Icons.logout, color: Colors.red), title: Text('Logout', style: TextStyle(color: Colors.red)))),
                     ];
                   },
                   onSelected: (value) {
@@ -306,12 +229,18 @@ class ProfileScreen extends ConsumerWidget {
               _buildGrid(asyncValue: userRequestsAsync, emptyMessage: "Belum ada postingan request.", errorMessage: "Gagal memuat request."),
               userShortsAsync.when(
                 data: (snapshot) {
-                  if (snapshot.docs.isEmpty) return const Center(child: Text('Belum ada shorts.'));
+                  // Filter client-side untuk shorts jika suatu saat ada field deleted
+                  final filtered = snapshot.docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    return !data.containsKey('deleted') || data['deleted'] == false;
+                  }).toList();
+
+                  if (filtered.isEmpty) return const Center(child: Text('Belum ada shorts.'));
                   return GridView.builder(
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
-                    itemCount: snapshot.docs.length,
+                    itemCount: filtered.length,
                     itemBuilder: (context, index) {
-                      final short = snapshot.docs[index].data() as Map<String, dynamic>;
+                      final short = filtered[index].data() as Map<String, dynamic>;
                       final videoUrl = short['videoUrl'] as String? ?? '';
                       if (videoUrl.isEmpty) return const SizedBox.shrink();
                       return VideoThumbnailWidget(videoUrl: videoUrl);
@@ -331,7 +260,8 @@ class ProfileScreen extends ConsumerWidget {
                       final title = live['title'] ?? 'Live Shopping';
                       final timestamp = live['createdAt'] as Timestamp?;
                       final formattedDate = timestamp != null
-                          ? DateFormat('d MMM yyyy, HH:mm').format(timestamp.toDate()) : 'Tanggal tidak tersedia';
+                          ? DateFormat('d MMM yyyy, HH:mm').format(timestamp.toDate())
+                          : 'Tanggal tidak tersedia';
                       return ListTile(
                         leading: const Icon(Icons.videocam_off_outlined),
                         title: Text(title),
@@ -357,31 +287,34 @@ class ProfileScreen extends ConsumerWidget {
   }) {
     return asyncValue.when(
       data: (snapshot) {
-        if (snapshot.docs.isEmpty) {
+        // Filter client-side: tampilkan dokumen tanpa field 'deleted' atau dengan 'deleted' == false
+        final filteredDocs = snapshot.docs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          return !data.containsKey('deleted') || data['deleted'] == false;
+        }).toList();
+
+        if (filteredDocs.isEmpty) {
           return Center(child: Text(emptyMessage));
         }
         return GridView.builder(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2),
-          itemCount: snapshot.docs.length,
+            crossAxisCount: 3, crossAxisSpacing: 2, mainAxisSpacing: 2,
+          ),
+          itemCount: filteredDocs.length,
           itemBuilder: (context, index) {
-            final postDoc = snapshot.docs[index];
-            final post = postDoc.data() as Map<String, dynamic>;
-            final imageUrls = post['imageUrls'] as List<dynamic>?;
-
-            if (imageUrls == null || imageUrls.isEmpty) {
-              return Container(
-                  color: Colors.grey.shade200,
-                  child: const Icon(Icons.image_not_supported));
-            }
+            final postDoc = filteredDocs[index];
+            final postMap = postDoc.data() as Map<String, dynamic>;
+            final imageUrls = (postMap['imageUrls'] as List<dynamic>?)?.cast<String>() ?? const <String>[];
 
             return GestureDetector(
-              onTap: () {
-                context.push('/post-detail/${postDoc.id}');
-              },
-              child: Image.network(imageUrls[0],
-                  fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => const Icon(Icons.error)),
+              onTap: () => context.push('/post-detail/${postDoc.id}'),
+              child: imageUrls.isNotEmpty
+                  ? Image.network(
+                imageUrls.first,
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => const Icon(Icons.error),
+              )
+                  : _VideoOrPlaceholder(postMap: postMap),
             );
           },
         );
@@ -418,16 +351,11 @@ class ProfileScreen extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    // BARU: Profile image dengan network image
                     CircleAvatar(
                       radius: 40,
                       backgroundColor: Colors.grey.shade200,
-                      backgroundImage: profileImageUrl.isNotEmpty
-                          ? NetworkImage(profileImageUrl)
-                          : null,
-                      child: profileImageUrl.isEmpty
-                          ? const Icon(Icons.person, size: 40, color: Colors.grey)
-                          : null,
+                      backgroundImage: profileImageUrl.isNotEmpty ? NetworkImage(profileImageUrl) : null,
+                      child: profileImageUrl.isEmpty ? const Icon(Icons.person, size: 40, color: Colors.grey) : null,
                     ),
                     const SizedBox(width: 20),
                     Expanded(
@@ -450,35 +378,23 @@ class ProfileScreen extends ConsumerWidget {
                     children: [
                       Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
                       Text('@$username', style: const TextStyle(color: Colors.grey)),
-                      // BARU: Tampilkan bio jika ada
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          bio,
-                          style: const TextStyle(fontSize: 14),
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(bio, style: const TextStyle(fontSize: 14), maxLines: 3, overflow: TextOverflow.ellipsis),
                       ],
                     ],
                   ),
                 ),
                 const SizedBox(height: 10),
-
                 if (isMyProfile)
                   ElevatedButton(
-                    onPressed: () {
-                      context.push('/edit-profile'); // Navigasi ke edit profile
-                    },
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 36),
-                    ),
+                    onPressed: () => context.push('/edit-profile'),
+                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 36)),
                     child: const Text('Edit Profil'),
                   )
                 else
                   Row(
                     children: [
-                      // ✅ FIX: Tombol Follow/Unfollow
                       Expanded(
                         child: Consumer(
                           builder: (context, ref, _) {
@@ -490,54 +406,31 @@ class ProfileScreen extends ConsumerWidget {
                             final isLoading = followState.isLoading;
 
                             return ElevatedButton(
-                              onPressed: isLoading ? null : () {
-                                followNotifier.toggleFollow(targetUserId);
-                              },
+                              onPressed: isLoading ? null : () => followNotifier.toggleFollow(targetUserId),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isFollowing
-                                    ? Colors.grey.shade300
-                                    : Theme.of(context).primaryColor,
-                                foregroundColor: isFollowing
-                                    ? Colors.black87
-                                    : Colors.white,
+                                backgroundColor: isFollowing ? Colors.grey.shade300 : Theme.of(context).primaryColor,
+                                foregroundColor: isFollowing ? Colors.black87 : Colors.white,
                                 minimumSize: const Size(double.infinity, 36),
                               ),
                               child: isLoading
-                                  ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                                   : Text(isFollowing ? 'Unfollow' : 'Follow'),
                             );
                           },
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Tombol Message tetap sama
                       Expanded(
-                        child: Consumer(
-                          builder: (context, ref, child) {
-                            return OutlinedButton(
-                              onPressed: () async {
-                                try {
-                                  final chatRoomId = await ref
-                                      .read(chatNotifierProvider.notifier)
-                                      .createOrGetChatRoom(targetUserId);
-
-                                  context.push('/chat/$targetUserId', extra: {
-                                    'username': username,
-                                    'chatRoomId': chatRoomId,
-                                  });
-                                } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text("Gagal memulai chat: ${e.toString()}"))
-                                  );
-                                }
-                              },
-                              child: const Text('Message'),
-                            );
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            try {
+                              final chatRoomId = await ref.read(chatNotifierProvider.notifier).createOrGetChatRoom(targetUserId);
+                              context.push('/chat/$targetUserId', extra: {'username': username, 'chatRoomId': chatRoomId});
+                            } catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Gagal memulai chat: $e")));
+                            }
                           },
+                          child: const Text('Message'),
                         ),
                       ),
                     ],
@@ -552,7 +445,6 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-
   Widget _buildStatColumn(String label, String count) {
     return Column(
       children: [
@@ -563,9 +455,22 @@ class ProfileScreen extends ConsumerWidget {
   }
 }
 
+class _VideoOrPlaceholder extends StatelessWidget {
+  final Map<String, dynamic> postMap;
+  const _VideoOrPlaceholder({required this.postMap});
+
+  @override
+  Widget build(BuildContext context) {
+    final videoUrl = (postMap['videoUrl'] as String?) ?? '';
+    if (videoUrl.isNotEmpty) {
+      return VideoThumbnailWidget(videoUrl: videoUrl);
+    }
+    return Container(color: Colors.grey.shade200, child: const Icon(Icons.image_not_supported));
+  }
+}
+
 class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverTabBarDelegate(this._tabBar);
-
   final TabBar _tabBar;
 
   @override
@@ -575,14 +480,9 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return Container(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: _tabBar,
-    );
+    return Container(color: Theme.of(context).scaffoldBackgroundColor, child: _tabBar);
   }
 
   @override
-  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
-    return false;
-  }
+  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) => false;
 }
