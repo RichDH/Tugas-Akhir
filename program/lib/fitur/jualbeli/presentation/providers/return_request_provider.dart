@@ -61,7 +61,7 @@ class ReturnRequestNotifier extends StateNotifier<AsyncValue<void>> {
       final request = await _repository.getReturnRequestById(requestId);
       try {
         final response = await http.post(
-          Uri.parse('${AppConstants.ngrokUrl}/sendNotification'),
+          Uri.parse('${AppConstants.vercelUrl}/sendNotification'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'recipientId': request.sellerId,

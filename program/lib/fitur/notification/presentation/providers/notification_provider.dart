@@ -113,7 +113,7 @@ class NotificationNotifier extends StateNotifier<AsyncValue<void>> {
 
       // Send announcement via backend
       final response = await http.post(
-        Uri.parse('${AppConstants.ngrokUrl}/send-announcement'),
+        Uri.parse('${AppConstants.vercelUrl}/send-announcement'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'title': title,

@@ -35,6 +35,7 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
+import '../fitur/admin/presentation/screens/admin_create_announcement.dart';
 import '../fitur/admin/presentation/screens/admin_manage_reports_screen.dart';
 import '../fitur/admin/presentation/screens/admin_search_user_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
@@ -220,6 +221,10 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/search-users',
         builder: (context, state) => const AdminSearchUserScreen(),
+      ),
+      GoRoute(
+        path: '/admin/create-announcement',
+        builder: (context, state) => const AdminCreateAnnouncementScreen(),
       ),
 
 

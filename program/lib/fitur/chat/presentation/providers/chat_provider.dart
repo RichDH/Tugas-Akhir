@@ -12,7 +12,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   ChatNotifier(this._ref) : super(ChatState());
 
-  final String _serverUrl = AppConstants.ngrokUrl;
+  final String _serverUrl = AppConstants.vercelUrl;
 
   // Membuat atau mendapatkan chat room
   Future<String> createOrGetChatRoom(String otherUserId) async {

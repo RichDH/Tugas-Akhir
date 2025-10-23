@@ -25,7 +25,7 @@ class TransactionNotifier extends StateNotifier<TransactionState> {
   TransactionNotifier(this._ref) : super(TransactionState());
 
   // PASTIKAN URL INI ADALAH URL NGROK ANDA YANG SEDANG AKTIF
-  final String _serverUrl = AppConstants.ngrokUrl; // Ganti dengan URL ngrok Anda
+  final String _serverUrl = AppConstants.vercelUrl; // Ganti dengan URL ngrok Anda
 
   // PERBAIKAN: Fungsi ini sekarang mengembalikan Map<String, String>
   Future<Map<String, String>?> createInvoice(double amount) async {

@@ -66,6 +66,11 @@ class AdminDrawer extends ConsumerWidget {
               context.go('/admin/search-users');
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.campaign),
+            title: const Text('Buat Pengumuman'),
+            onTap: () => context.push('/admin/create-announcement'),
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),

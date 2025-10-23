@@ -7,7 +7,7 @@ import 'package:program/app/constants/app_constants.dart';
 
 class ApiService {
   // ngrok http 3000
-  static const String _baseUrl = AppConstants.ngrokUrl;
+  static const String _baseUrl = AppConstants.vercelUrl;
 
   // PERBAIKAN 1: Fungsi untuk membuat room dengan unique ID
   Future<String> createRoom({required String title}) async {

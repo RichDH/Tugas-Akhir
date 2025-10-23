@@ -20,7 +20,7 @@ void main() async {
 
   try {
     final response = await http.get(
-      Uri.parse('${AppConstants.ngrokUrl}/cleanup-expired-cart-items'),
+      Uri.parse('${AppConstants.vercelUrl}/cleanup-expired-cart-items'),
     );
     if (response.statusCode == 200) {
       print('Auto-remove cart items: ${response.body}');
