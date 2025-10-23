@@ -9,6 +9,8 @@ import 'package:program/app/providers/firebase_providers.dart';
 
 // Import screens
 import 'package:program/common/widgets/scaffold_with_nav_bar.dart';
+import 'package:program/fitur/admin/presentation/screens/admin_reports_screen.dart';
+import 'package:program/fitur/admin/presentation/screens/admin_transactions_screen.dart';
 import 'package:program/fitur/auth/presentation/screens/login_screen.dart';
 import 'package:program/fitur/auth/presentation/screens/register_screen.dart';
 import 'package:program/fitur/feed/presentation/screens/feed_screen.dart';
@@ -36,7 +38,9 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
 import '../fitur/admin/presentation/screens/admin_create_announcement.dart';
+import '../fitur/admin/presentation/screens/admin_create_promo_screen.dart';
 import '../fitur/admin/presentation/screens/admin_manage_reports_screen.dart';
+import '../fitur/admin/presentation/screens/admin_promo_list_screen.dart';
 import '../fitur/admin/presentation/screens/admin_search_user_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_screen.dart';
@@ -225,6 +229,29 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/admin/create-announcement',
         builder: (context, state) => const AdminCreateAnnouncementScreen(),
+      ),
+      GoRoute(
+        path: '/admin/promos',
+        builder: (context, state) => const AdminPromoListScreen(),
+      ),
+      GoRoute(
+        path: '/admin/create-promo',
+        builder: (context, state) => const AdminCreatePromoScreen(),
+      ),
+      GoRoute(
+        path: '/admin/edit-promo/:promoId',
+        builder: (context, state) {
+          final promoId = state.pathParameters['promoId']!;
+          return AdminCreatePromoScreen(promoId: promoId);
+        },
+      ),
+      GoRoute(
+        path: '/admin/transactions',
+        builder: (context, state) => const AdminTransactionsScreen(),
+      ),
+      GoRoute(
+        path: '/admin/laporan',
+        builder: (context, state) => const AdminReportsScreen(),
       ),
 
 

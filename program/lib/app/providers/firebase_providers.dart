@@ -45,3 +45,17 @@ final currentUserDocStreamProvider = StreamProvider<DocumentSnapshot?>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   return firestore.collection('users').doc(user.uid).snapshots();
 });
+
+final adminBalanceStreamProvider = StreamProvider<double>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return const Stream<double>.empty();
+
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('users').doc(user.uid).snapshots().map((snap) {
+    final data = snap.data() as Map<String, dynamic>?;
+    if (data == null) return 0.0;
+    final saldo = data['saldo'];
+    if (saldo is num) return saldo.toDouble();
+    return 0.0;
+  });
+});

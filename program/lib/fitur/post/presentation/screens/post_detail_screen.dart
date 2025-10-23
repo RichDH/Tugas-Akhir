@@ -13,6 +13,7 @@ import '../widgets/video_player_widgets.dart';
 import 'package:program/fitur/post/presentation/widgets/take_order_dialog.dart';
 import 'package:program/fitur/post/presentation/providers/offer_provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:program/fitur/promo/presentation/providers/admin_promo_provider.dart';
 
 
 /// Util untuk optimasi URL Cloudinary
@@ -624,70 +625,160 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     );
   }
 
-  // ✅ DIALOG BELI LANGSUNG DENGAN CEK SALDO
   void _showBuyDirectDialog(post) {
     int quantity = 1;
 
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: const Text('Beli Langsung'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(post.title),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    onPressed: quantity > 1 ? () {
-                      setState(() => quantity--);
-                    } : null,
-                    icon: const Icon(Icons.remove),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(8),
+        builder: (context, setState) {
+          final price = (post.price ?? 0) * quantity;
+
+          return Consumer(
+            builder: (context, ref, child) {
+              // ✅ PERBAIKAN: Gunakan watch dalam Consumer, bukan read
+              final promosAsync = ref.watch(activePromosProvider);
+
+              return promosAsync.when(
+                data: (promos) {
+                  final now = DateTime.now();
+                  final eligible = promos.where((p) {
+                    final within = now.isAfter(p.startDate) && now.isBefore(p.endDate);
+                    return p.isActive && within && price >= p.minimumTransaction;
+                  }).toList()
+                    ..sort((a, b) => b.discountAmount.compareTo(a.discountAmount));
+
+                  final bestPromo = eligible.isNotEmpty ? eligible.first : null;
+                  final discount = bestPromo?.discountAmount ?? 0.0;
+                  final payable = (price - discount).clamp(0, double.infinity);
+
+                  return AlertDialog(
+                    title: const Text('Beli Langsung'),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(post.title),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              onPressed: quantity > 1 ? () { setState(() => quantity--); } : null,
+                              icon: const Icon(Icons.remove),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text('$quantity', style: const TextStyle(fontSize: 18)),
+                            ),
+                            IconButton(
+                              onPressed: () { setState(() => quantity++); },
+                              icon: const Icon(Icons.add),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(price)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        if (bestPromo != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green.shade200),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Promo "${bestPromo.name}" diterapkan: - ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(bestPromo.discountAmount)}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Dibayar: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(payable)}',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    child: Text('$quantity', style: const TextStyle(fontSize: 18)),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _buyDirect(post, quantity, bestPromo: bestPromo);
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                        child: const Text('Beli Sekarang'),
+                      ),
+                    ],
+                  );
+                },
+                loading: () => AlertDialog(
+                  title: const Text('Beli Langsung'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(post.title),
+                      const SizedBox(height: 16),
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 8),
+                      const Text('Memuat promo...'),
+                    ],
                   ),
-                  IconButton(
-                    onPressed: () {
-                      setState(() => quantity++);
-                    },
-                    icon: const Icon(Icons.add),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('Tutup')),
+                  ],
+                ),
+                error: (e, s) => AlertDialog(
+                  title: const Text('Beli Langsung'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(post.title),
+                      const SizedBox(height: 16),
+                      // ✅ FALLBACK: Tampilkan tanpa promo jika error
+                      Text(
+                        'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(price)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Gagal memuat promo: ${e.toString().substring(0, 50)}...',
+                          style: const TextStyle(color: Colors.orange, fontSize: 12)),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format((post.price ?? 0) * quantity)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _buyDirect(post, quantity);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-              child: const Text('Beli Sekarang'),
-            ),
-          ],
-        ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('Batal')),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _buyDirect(post, quantity, bestPromo: null); // tanpa promo jika error
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                      child: const Text('Beli Sekarang'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
+
+
 
   // ✅ TOGGLE LIKE DENGAN PERBAIKAN (TIDAK DOUBLE INCREMENT)
   Future<void> _toggleLike(post) async {
@@ -747,9 +838,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
   // ✅ PERBAIKAN BELI LANGSUNG - MASUK KE INTERESTED ORDERS DULU
-  Future<void> _buyDirect(post, int quantity) async {
+  Future<void> _buyDirect(post, int quantity, {dynamic bestPromo}) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
+      final price = (post.price ?? 0) * quantity;
+      final discount = (bestPromo?.discountAmount ?? 0.0);
+      final payable = (price - discount).clamp(0, double.infinity);
+
       if (user == null) return;
 
       final totalAmount = (post.price ?? 0) * quantity;
@@ -762,13 +857,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
       final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
-      if (userBalance < totalAmount) {
-        _showInsufficientBalanceDialog(totalAmount, userBalance);
-        return;
-      }
-
-      // ✅ KONFIRMASI TRANSAKSI DAN BUAT INTERESTED ORDER
-      await _showTransactionConfirmation(post, quantity, totalAmount, user.uid);
+      if (userBalance < payable) { _showInsufficientBalanceDialog(payable, userBalance); return; }
+      await _showTransactionConfirmation(post, quantity, price, payable, user.uid, bestPromo);
 
     } catch (e) {
       print('❌ Error in _buyDirect: $e');
@@ -781,8 +871,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     }
   }
 
-// ✅ DIALOG KONFIRMASI TRANSAKSI SEBELUM MEMBUAT INTERESTED ORDER
-  Future<void> _showTransactionConfirmation(post, int quantity, double totalAmount, String userId) async {
+  Future<void> _showTransactionConfirmation(post, int quantity, double totalAmount, double payable, String userId, dynamic bestPromo) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -790,18 +879,17 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.info_outline, size: 48, color: Colors.blue),
-            const SizedBox(height: 16),
-            Text(
-              'Item: ${post.title}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            Text('Item: ${post.title}', style: const TextStyle(fontWeight: FontWeight.bold)),
             Text('Quantity: $quantity'),
             const SizedBox(height: 8),
-            Text(
-              'Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green),
-            ),
+            Text('Total: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(totalAmount)}',
+                style: const TextStyle(fontSize: 16)),
+            if (bestPromo != null)
+              Text('Promo: ${bestPromo.name} (- ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(bestPromo.discountAmount)})',
+                  style: const TextStyle(fontSize: 13, color: Colors.green)),
+            const SizedBox(height: 4),
+            Text('Dibayar: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(payable)}',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -829,57 +917,48 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             ),
           ],
         ),
+
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: const Text('Lanjutkan', style: TextStyle(color: Colors.white)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Batal')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Lanjutkan')),
         ],
       ),
     );
 
     if (result == true) {
-      await _createInterestedOrder(post, quantity, totalAmount, userId);
+      await _createInterestedOrder(post, quantity, totalAmount, payable, userId, bestPromo);
     }
   }
 
 // File: post_detail_screen.dart - PERBAIKAN METHOD _createInterestedOrder
-  Future<void> _createInterestedOrder(post, int quantity, double totalAmount, String userId) async {
+  Future<void> _createInterestedOrder(post, int quantity, double totalAmount, double payable, String userId, dynamic bestPromo) async {
     try {
-      // ✅ GET USER ADDRESS
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
-
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
       final alamat = userDoc.data()?['alamat'] as String?;
-      final userAddress = (alamat != null && alamat.trim().isNotEmpty)
-          ? alamat.trim()
-          : 'Alamat tidak tersedia';
+      final userAddress = (alamat != null && alamat.trim().isNotEmpty) ? alamat.trim() : 'Alamat tidak tersedia';
 
+      final discount = (bestPromo?.discountAmount ?? 0.0);
 
-      // ✅ POTONG SALDO DULU (ESCROW) - PERBAIKI FIELD NAME
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .update({
-        'saldo': FieldValue.increment(-totalAmount), // ✅ PERBAIKAN: Gunakan 'saldo' bukan 'balance'
+      // ✅ GUNAKAN BATCH TRANSACTION UNTUK ATOMICITY
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Potong saldo buyer
+      final buyerRef = FirebaseFirestore.instance.collection('users').doc(userId);
+      batch.update(buyerRef, {
+        'saldo': FieldValue.increment(-payable),
       });
 
-      // ✅ BUAT TRANSAKSI DENGAN ALAMAT
-      await FirebaseFirestore.instance.collection('transactions').add({
+      // 2. Buat transaksi
+      final transactionRef = FirebaseFirestore.instance.collection('transactions').doc();
+      batch.set(transactionRef, {
         'postId': post.id,
         'buyerId': userId,
         'sellerId': post.userId,
         'amount': totalAmount,
+        'paidAmount': payable,
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
-        'buyerAddress': userAddress, // ✅ TAMBAHAN: Alamat pembeli
+        'buyerAddress': userAddress,
         'items': [
           {
             'postId': post.id,
@@ -893,29 +972,66 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         'escrowAmount': totalAmount,
         'isAcceptedBySeller': false,
         'type': 'direct_buy',
+        if (bestPromo != null) 'promoId': bestPromo.id,
+        if (bestPromo != null) 'promoName': bestPromo.name,
+        if (bestPromo != null) 'promoDiscount': discount,
       });
 
-      _showInterestedOrderSuccessDialog(totalAmount);
+      // ✅ KURANGI SALDO ADMIN JIKA ADA PROMO
+      if (bestPromo != null && discount > 0) {
+        // Cari admin user
+        final adminQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: 'admin@gmail.com')
+            .limit(1)
+            .get();
+
+        if (adminQuery.docs.isNotEmpty) {
+          final adminDocRef = adminQuery.docs.first.reference;
+          batch.update(adminDocRef, {
+            'saldo': FieldValue.increment(-discount),
+          });
+
+          // ✅ LOG PENGGUNAAN PROMO
+          final promoLogRef = FirebaseFirestore.instance.collection('promo_usage_logs').doc();
+          batch.set(promoLogRef, {
+            'promoId': bestPromo.id,
+            'promoName': bestPromo.name,
+            'discountAmount': discount,
+            'buyerId': userId,
+            'sellerId': post.userId,
+            'totalTransactionAmount': totalAmount,
+            'usedAt': FieldValue.serverTimestamp(),
+            'transactionType': 'direct_buy',
+            'transactionId': transactionRef.id,
+          });
+        } else {
+          print('⚠️ Admin user not found - promo discount not deducted from admin');
+        }
+      }
+
+      // ✅ COMMIT SEMUA DALAM SATU TRANSAKSI ATOMIK
+      await batch.commit();
+
+      _showInterestedOrderSuccessDialog(payable);
 
     } catch (e) {
       print('❌ Error creating interested order: $e');
 
-      // ✅ ROLLBACK SALDO JIKA GAGAL
+      // ✅ ROLLBACK BUYER SALDO JIKA GAGAL
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
           .update({
-        'saldo': FieldValue.increment(totalAmount),
+        'saldo': FieldValue.increment(payable),
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal membuat pesanan: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Gagal membuat pesanan: $e'), backgroundColor: Colors.red),
       );
     }
   }
+
 
 
 // ✅ DIALOG SUCCESS UNTUK INTERESTED ORDER

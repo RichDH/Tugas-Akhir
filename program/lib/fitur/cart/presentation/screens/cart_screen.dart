@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:program/fitur/promo/presentation/providers/admin_promo_provider.dart';
 import '../providers/cart_provider.dart';
 
 class CartScreen extends ConsumerStatefulWidget {
@@ -390,6 +390,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           (sum, item) => sum + (item.price * item.quantity),
     );
 
+    // Ambil promo aktif
+    final promosAsync = ref.watch(activePromosProvider);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -402,61 +405,98 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total:',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                NumberFormat.currency(
-                  locale: 'id_ID',
-                  symbol: 'Rp ',
-                  decimalDigits: 0,
-                ).format(totalAmount),
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: cartItems.isNotEmpty && !_isValidating
-                  ? () => _processCheckout(context, cartItems, totalAmount, cartNotifier)
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-              child: Text(
-                'Bayar Semua (${NumberFormat.currency(
-                  locale: 'id_ID',
-                  symbol: 'Rp ',
-                  decimalDigits: 0,
-                ).format(totalAmount)})',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
+      child: promosAsync.when(
+        loading: () => _checkoutBlock(context, totalAmount, cartItems, cartNotifier, null),
+        error: (e, s) => _checkoutBlock(context, totalAmount, cartItems, cartNotifier, null),
+        data: (promos) {
+          // Pilih promo terbaik yang memenuhi syarat
+          final now = DateTime.now();
+          final eligiblePromos = promos.where((p) {
+            final withinPeriod = now.isAfter(p.startDate) && now.isBefore(p.endDate);
+            return p.isActive && withinPeriod && totalAmount >= p.minimumTransaction;
+          }).toList()
+            ..sort((a, b) => b.discountAmount.compareTo(a.discountAmount)); // pilih potongan terbesar
+
+          final bestPromo = eligiblePromos.isNotEmpty ? eligiblePromos.first : null;
+          return _checkoutBlock(context, totalAmount, cartItems, cartNotifier, bestPromo);
+        },
       ),
     );
   }
+
+  Widget _checkoutBlock(BuildContext context, double totalAmount, List cartItems, cartNotifier, dynamic bestPromo) {
+    final formatter = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0);
+    final discount = bestPromo?.discountAmount ?? 0.0;
+    final payable = (totalAmount - discount).clamp(0, double.infinity);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Info total + promo
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text(formatter.format(totalAmount),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green)),
+          ],
+        ),
+        if (bestPromo != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.green.shade200),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.local_offer, color: Colors.green),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Anda mendapat promo "${bestPromo.name}" - Potongan ${formatter.format(bestPromo.discountAmount)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.green, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        // Payable
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('Dibayar:', style: TextStyle(fontSize: 14)),
+            Text(formatter.format(payable), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: cartItems.isNotEmpty && !_isValidating
+                ? () => _processCheckout(context, cartItems, totalAmount, cartNotifier, bestPromo)
+                : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+            ),
+            child: Text(
+              bestPromo == null
+                  ? 'Bayar Semua (${formatter.format(totalAmount)})'
+                  : 'Bayar Semua (${formatter.format(payable)})',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
 
   // ✅ VALIDASI CART ITEMS DARI POST YANG SUDAH DI-DELETE
   Future<void> _validateCartItems() async {
@@ -591,7 +631,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   }
 
   // ✅ PROCESS CHECKOUT DENGAN VALIDASI TAMBAHAN (DIPERBAIKI)
-  Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier) async {
+  Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier,dynamic bestPromo) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -655,6 +695,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           return sum;
         },
       );
+      final discount = (bestPromo?.discountAmount ?? 0.0);
+      final payable = (validTotalAmount - discount).clamp(0, double.infinity);
+
 
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
@@ -663,21 +706,19 @@ class _CartScreenState extends ConsumerState<CartScreen> {
 
       final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
-      if (userBalance < validTotalAmount) {
-        // ✅ SALDO TIDAK MENCUKUPI
+      if (userBalance < payable ) {
         _showInsufficientBalanceDialog(context, validTotalAmount, userBalance);
         return;
       }
 
-      // ✅ SALDO MENCUKUPI, PROSES CHECKOUT DENGAN DATA YANG SUDAH DIVALIDASI
-      await _createCartTransaction(currentCartItems, validTotalAmount, user.uid);
+      await _createCartTransaction(currentCartItems, validTotalAmount, user.uid, bestPromo: bestPromo);
 
       // ✅ KURANGI SALDO USER
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .update({
-        'saldo': FieldValue.increment(-validTotalAmount),
+        'saldo': FieldValue.increment(-payable),
       });
 
       // ✅ HAPUS SEMUA ITEM DARI CART (dengan null check)
@@ -687,7 +728,6 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         }
       }
 
-      // ✅ TAMPILKAN POPUP SUKSES
       _showCartCheckoutSuccessDialog(context, validTotalAmount);
 
     } catch (e) {
@@ -700,12 +740,11 @@ class _CartScreenState extends ConsumerState<CartScreen> {
     }
   }
 
-  Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId) async {
+  Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId, {dynamic bestPromo}) async {
     // Group items by seller untuk membuat transaksi per penjual
     final Map<String, List> itemsBySeller = {};
 
     for (final item in cartItems) {
-      // Null check untuk item dan sellerId
       if (item?.sellerId != null) {
         if (!itemsBySeller.containsKey(item.sellerId)) {
           itemsBySeller[item.sellerId] = [];
@@ -714,34 +753,36 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       }
     }
 
-    // ✅ GET USER ADDRESS
-    final userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .get();
-
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
     final userAddress = userDoc.data()?['alamat'] as String? ?? 'Alamat tidak tersedia';
 
-    // ✅ BUAT TRANSAKSI UNTUK SETIAP PENJUAL DENGAN ALAMAT
+    // ✅ HITUNG TOTAL DISCOUNT YANG HARUS DITANGGUNG ADMIN
+    final totalDiscount = bestPromo?.discountAmount ?? 0.0;
+
+    // ✅ GUNAKAN BATCH TRANSACTION UNTUK ATOMICITY
+    final batch = FirebaseFirestore.instance.batch();
+
+    // Buat transaksi untuk setiap penjual
     for (final sellerId in itemsBySeller.keys) {
       final sellerItems = itemsBySeller[sellerId]!;
       final sellerTotal = sellerItems.fold<double>(
         0,
-            (sum, item) {
-          if (item != null) {
-            return sum + (item.price * item.quantity);
-          }
-          return sum;
-        },
+            (sum, item) => sum + (item?.price ?? 0) * (item?.quantity ?? 1),
       );
 
-      await FirebaseFirestore.instance.collection('transactions').add({
+      // Proporsi diskon untuk seller ini
+      final discountPerSeller = totalDiscount * (sellerTotal / totalAmount);
+      final appliedDiscount = double.parse(discountPerSeller.toStringAsFixed(0));
+
+      final transactionRef = FirebaseFirestore.instance.collection('transactions').doc();
+      batch.set(transactionRef, {
         'buyerId': userId,
         'sellerId': sellerId,
         'amount': sellerTotal,
+        'paidAmount': sellerTotal - appliedDiscount,
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
-        'buyerAddress': userAddress, // ✅ TAMBAHAN: Alamat pembeli
+        'buyerAddress': userAddress,
         'items': sellerItems.map((item) => {
           'postId': item?.postId ?? '',
           'title': item?.title ?? '',
@@ -753,9 +794,45 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         'escrowAmount': sellerTotal,
         'isAcceptedBySeller': false,
         'type': 'cart_checkout',
+        if (bestPromo != null) 'promoId': bestPromo.id,
+        if (bestPromo != null) 'promoName': bestPromo.name,
+        if (bestPromo != null) 'promoDiscount': appliedDiscount,
       });
     }
+
+    // ✅ KURANGI SALDO ADMIN JIKA ADA PROMO
+    if (bestPromo != null && totalDiscount > 0) {
+      // Cari dokumen admin (asumsi admin@gmail.com)
+      final adminQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: 'admin@gmail.com')
+          .limit(1)
+          .get();
+
+      if (adminQuery.docs.isNotEmpty) {
+        final adminDocRef = adminQuery.docs.first.reference;
+        batch.update(adminDocRef, {
+          'saldo': FieldValue.increment(-totalDiscount),
+        });
+
+        // ✅ LOG PENGGUNAAN PROMO UNTUK AUDIT
+        final promoLogRef = FirebaseFirestore.instance.collection('promo_usage_logs').doc();
+        batch.set(promoLogRef, {
+          'promoId': bestPromo.id,
+          'promoName': bestPromo.name,
+          'discountAmount': totalDiscount,
+          'buyerId': userId,
+          'totalTransactionAmount': totalAmount,
+          'usedAt': FieldValue.serverTimestamp(),
+          'transactionType': 'cart_checkout',
+        });
+      }
+    }
+
+    // ✅ COMMIT SEMUA DALAM SATU TRANSAKSI ATOMIK
+    await batch.commit();
   }
+
 
   // ✅ GANTI DIALOG SUCCESS UNTUK CART
   void _showCartCheckoutSuccessDialog(BuildContext context, double totalAmount) {

@@ -216,28 +216,75 @@ class _NotificationItem extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(notification.title),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (notification.imageUrl != null) ...[
-                Image.network(
-                  notification.imageUrl!,
-                  height: 200,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
+        title: Text(
+          notification.title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        content: Container(
+          // ✅ PERBAIKAN: Set constraints eksplisit
+          constraints: const BoxConstraints(
+            maxWidth: 300,
+            maxHeight: 400,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (notification.imageUrl != null && notification.imageUrl!.isNotEmpty) ...[
+                  // ✅ PERBAIKAN: Wrap image dengan Container dan error handling
+                  Container(
+                    width: double.infinity,
+                    height: 350,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        notification.imageUrl!,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            height: 150,
+                            color: Colors.grey.shade100,
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            height: 150,
+                            color: Colors.grey.shade100,
+                            child: const Center(
+                              child: Icon(
+                                Icons.broken_image,
+                                color: Colors.grey,
+                                size: 48,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // ✅ PERBAIKAN: Wrap text dengan Flexible atau constraints
+                Text(
+                  notification.body,
+                  style: const TextStyle(fontSize: 14),
                 ),
                 const SizedBox(height: 16),
+                Text(
+                  'Dikirim pada: ${_formatDateTime(notification.createdAt)}',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
               ],
-              Text(notification.body),
-              const SizedBox(height: 16),
-              Text(
-                'Dikirim pada: ${_formatDateTime(notification.createdAt)}',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
+            ),
           ),
         ),
         actions: [
@@ -249,6 +296,7 @@ class _NotificationItem extends ConsumerWidget {
       ),
     );
   }
+
 
   String _formatDateTime(DateTime dateTime) {
     final now = DateTime.now();
