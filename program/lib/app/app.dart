@@ -60,6 +60,8 @@ import '../fitur/profile/presentation/screens/history_screen.dart';
 import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
 import '../fitur/profile/presentation/screens/return_response_list_screen.dart';
 import '../fitur/profile/presentation/screens/return_response_screen.dart';
+import '../fitur/story/presentation/screens/create_story_screen.dart';
+import '../fitur/story/presentation/screens/story_viewer_screen.dart';
 
 
 final goRouter = Provider<GoRouter>((ref) {
@@ -200,6 +202,20 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/request-history',
         builder: (context, state) => const RequestHistoryScreen(),
       ),
+      GoRoute(
+        path: '/create-story',
+        builder: (context, state) => const CreateStoryScreen(),
+      ),
+      GoRoute(
+        path: '/story-viewer/:userId',
+        builder: (context, state) {
+          final userId = state.pathParameters['userId']!;
+          return StoryViewerScreen(userId: userId);
+        },
+      ),
+
+
+
       GoRoute(
         path: '/admin/return-review',
         builder: (context, state) => const ReturnReviewScreen(),
