@@ -8,11 +8,12 @@ import 'app/app.dart'; // Kita akan buat file ini nanti
 import 'package:cloudinary_url_gen/cloudinary.dart';
 import 'package:cloudinary_flutter/image/cld_image.dart';
 import 'package:cloudinary_flutter/cloudinary_context.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 void main() async {
 
   WidgetsFlutterBinding.ensureInitialized(); // PASTIKAN BARIS INI ADA
-
+  await initializeDateFormatting('id_ID', null);
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );

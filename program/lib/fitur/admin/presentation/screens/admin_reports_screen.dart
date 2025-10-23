@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import 'dart:typed_data';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:program/fitur/admin/presentation/providers/admin_report_provider.dart';
 import 'package:program/fitur/admin/presentation/widgets/admin_drawer.dart';
 
@@ -16,129 +19,135 @@ class AdminReportsScreen extends ConsumerStatefulWidget {
 
 class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
   @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    final defaultRange = DateTimeRange(
-      start: now.subtract(const Duration(days: 7)),
-      end: now,
-    );
-
-    // Set initial date range
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(reportDateRangeProvider.notifier).state = defaultRange;
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final dateRange = ref.watch(reportDateRangeProvider);
-    final totalUsers = ref.watch(adminTotalUsersProvider);
-    final verifiedUsers = ref.watch(adminVerifiedUsersProvider);
-    final totalTransactions = ref.watch(adminTotalTransactionsProvider);
-    final completedTransactions = ref.watch(adminCompletedTransactionsProvider);
-    final totalRevenue = ref.watch(adminTotalRevenueProvider);
-
-    final df = DateFormat('dd MMM yyyy');
+    final selectedMonth = ref.watch(selectedMonthProvider);
+    final monthlyReport = ref.watch(adminMonthlyReportProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin • Laporan'),
-        backgroundColor: Colors.indigo,
+        backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
         actions: [
+          // ✅ PERBAIKAN: Tombol kalender yang bisa diklik untuk filter bulan
           IconButton(
             onPressed: () async {
-              final picked = await showDateRangePicker(
-                context: context,
-                firstDate: DateTime(2023, 1, 1),
-                lastDate: DateTime.now(),
-                initialDateRange: dateRange,
-              );
-              if (picked != null) {
-                ref.read(reportDateRangeProvider.notifier).state = picked;
-              }
+              await _showMonthPicker(context, ref, selectedMonth);
             },
-            icon: const Icon(Icons.date_range),
+            icon: const Icon(Icons.calendar_today),
+            tooltip: 'Pilih Bulan',
           ),
         ],
       ),
       drawer: const AdminDrawer(),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header periode
-            Card(
-              color: Colors.indigo.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(Icons.calendar_today, color: Colors.indigo.shade700),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        dateRange != null
-                            ? 'Periode: ${df.format(dateRange.start)} - ${df.format(dateRange.end)}'
-                            : 'Pilih periode untuk melihat laporan',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.indigo.shade700,
+      body: monthlyReport.when(
+        loading: () => const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Menganalisis data bulanan...'),
+            ],
+          ),
+        ),
+        error: (e, s) => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text('Error: $e', textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(adminMonthlyReportProvider),
+                child: const Text('Coba Lagi'),
+              ),
+            ],
+          ),
+        ),
+        data: (data) => SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header periode dengan bulan yang dipilih
+              Card(
+                color: Colors.deepPurple.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today, color: Colors.deepPurple.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Laporan: ${DateFormat('MMMM yyyy', 'id_ID').format(selectedMonth)}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple.shade700,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      // ✅ INDIKATOR BAHWA BISA DIKLIK
+                      Icon(Icons.edit, color: Colors.deepPurple.shade400, size: 16),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
 
-            // Metrics Grid
-            Expanded(
-              child: GridView.count(
+              // ✅ METRICS GRID DENGAN DATA USER YANG BENAR
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.5,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.2,
                 children: [
-                  _buildMetricCard(
-                    'Total Pengguna',
-                    totalUsers,
-                    Icons.people,
+                  _buildGrowthMetricCard(
+                    'User Baru',
+                    data['newUsers'].toString(),
+                    data['userGrowth'],
+                    Icons.person_add,
                     Colors.blue,
+                    subtitle: 'Total: ${data['totalUsersAccumulated']}',
                   ),
-                  _buildMetricCard(
-                    'Pengguna Terverifikasi',
-                    verifiedUsers,
+                  _buildGrowthMetricCard(
+                    'Verified Baru',
+                    data['newVerifiedUsers'].toString(),
+                    data['verifiedGrowth'],
                     Icons.verified_user,
                     Colors.green,
+                    subtitle: 'Total: ${data['totalVerifiedAccumulated']}',
                   ),
-                  _buildMetricCard(
-                    'Total Transaksi',
-                    totalTransactions,
+                  _buildGrowthMetricCard(
+                    'Transaksi Baru',
+                    data['totalTransactions'].toString(),
+                    data['transactionGrowth'],
                     Icons.receipt_long,
                     Colors.orange,
                   ),
-                  _buildMetricCard(
+                  _buildGrowthMetricCard(
                     'Transaksi Selesai',
-                    completedTransactions,
+                    data['completedTransactions'].toString(),
+                    data['completedGrowth'],
                     Icons.check_circle,
                     Colors.teal,
                   ),
                 ],
               ),
-            ),
 
-            // Revenue Card (full width)
-            Card(
-              color: Colors.green.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: totalRevenue.when(
-                  data: (revenue) => Row(
+              const SizedBox(height: 16),
+
+              // Revenue Card dengan growth
+              Card(
+                color: Colors.green.shade50,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
                     children: [
                       Icon(Icons.monetization_on, color: Colors.green.shade700, size: 32),
                       const SizedBox(width: 12),
@@ -146,22 +155,29 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Total Revenue (Selesai)',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green.shade700,
-                              ),
+                            Row(
+                              children: [
+                                Text(
+                                  'Total Revenue',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.green.shade700,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _buildGrowthChip(data['revenueGrowth']),
+                              ],
                             ),
+                            const SizedBox(height: 4),
                             Text(
                               NumberFormat.currency(
                                 locale: 'id_ID',
                                 symbol: 'Rp ',
                                 decimalDigits: 0,
-                              ).format(revenue),
+                              ).format(data['totalRevenue']),
                               style: TextStyle(
-                                fontSize: 20,
+                                fontSize: 18,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.green.shade800,
                               ),
@@ -171,167 +187,286 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
                       ),
                     ],
                   ),
-                  loading: () => const Row(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(width: 12),
-                      Text('Menghitung revenue...'),
-                    ],
-                  ),
-                  error: (e, s) => Row(
-                    children: [
-                      const Icon(Icons.error, color: Colors.red),
-                      const SizedBox(width: 12),
-                      Text('Error: ${e.toString().substring(0, 30)}...'),
-                    ],
-                  ),
                 ),
               ),
-            ),
 
-            const SizedBox(height: 16),
+              const SizedBox(height: 24),
 
-            // Export PDF Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _exportPdf(context, ref),
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('Export PDF'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricCard(
-      String title,
-      AsyncValue<int> valueAsync,
-      IconData icon,
-      Color color,
-      ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 24),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+              // Export PDF Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _showPdfPreview(context, data),
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Preview & Download PDF'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    textStyle: const TextStyle(fontSize: 16),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            valueAsync.when(
-              data: (value) => Text(
-                value.toString(),
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                ),
-              ),
-              loading: () => const CircularProgressIndicator(),
-              error: (e, s) => Text(
-                'Error',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.red.shade600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _exportPdf(BuildContext context, WidgetRef ref) async {
-    try {
-      // Ambil data saat ini dari provider
-      final users = ref.read(adminTotalUsersProvider).value ?? 0;
-      final verifiedUsers = ref.read(adminVerifiedUsersProvider).value ?? 0;
-      final transactions = ref.read(adminTotalTransactionsProvider).value ?? 0;
-      final completedTx = ref.read(adminCompletedTransactionsProvider).value ?? 0;
-      final revenue = ref.read(adminTotalRevenueProvider).value ?? 0.0;
-      final dateRange = ref.read(reportDateRangeProvider);
-
-      final pdf = pw.Document();
-      final df = DateFormat('dd MMM yyyy');
-
-      pdf.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
-          build: (ctx) => pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'Laporan Admin Dashboard',
-                style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
-              ),
-              pw.SizedBox(height: 8),
-              pw.Text(
-                dateRange != null
-                    ? 'Periode: ${df.format(dateRange.start)} - ${df.format(dateRange.end)}'
-                    : 'Laporan Real-time',
-              ),
-              pw.SizedBox(height: 24),
-
-              _pdfMetricRow('Total Pengguna', users.toString()),
-              _pdfMetricRow('Pengguna Terverifikasi', verifiedUsers.toString()),
-              _pdfMetricRow('Total Transaksi', transactions.toString()),
-              _pdfMetricRow('Transaksi Selesai', completedTx.toString()),
-              _pdfMetricRow('Total Revenue', NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(revenue)),
-
-              pw.Spacer(),
-              pw.Divider(),
-              pw.Text(
-                'Dibuat pada: ${DateFormat('dd MMM yyyy HH:mm').format(DateTime.now())}',
-                style: const pw.TextStyle(fontSize: 10),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ✅ MONTH PICKER DIALOG
+  Future<void> _showMonthPicker(BuildContext context, WidgetRef ref, DateTime currentMonth) async {
+    final now = DateTime.now();
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pilih Bulan'),
+        content: SizedBox(
+          width: 300,
+          height: 400,
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+            ),
+            itemCount: 12,
+            itemBuilder: (context, index) {
+              final month = DateTime(now.year, index + 1, 1);
+              final isSelected = month.month == currentMonth.month && month.year == currentMonth.year;
+
+              return ElevatedButton(
+                onPressed: () {
+                  ref.read(selectedMonthProvider.notifier).state = month;
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isSelected ? Colors.deepPurple : Colors.grey.shade200,
+                  foregroundColor: isSelected ? Colors.white : Colors.black87,
+                ),
+                child: Text(
+                  DateFormat('MMM').format(month),
+                  style: const TextStyle(fontSize: 12),
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ UPDATED METRIC CARD DENGAN SUBTITLE
+  Widget _buildGrowthMetricCard(
+      String title,
+      String value,
+      double growth,
+      IconData icon,
+      Color color, {
+        String? subtitle,
+      }) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (subtitle != null)
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                _buildGrowthChip(growth),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Growth chip tetap sama
+  Widget _buildGrowthChip(double growth) {
+    final isPositive = growth > 0;
+    final isZero = growth == 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: isZero
+            ? Colors.grey.shade200
+            : (isPositive ? Colors.green.shade100 : Colors.red.shade100),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        isZero
+            ? '0%'
+            : '${isPositive ? '+' : ''}${growth.toStringAsFixed(1)}%',
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: isZero
+              ? Colors.grey.shade600
+              : (isPositive ? Colors.green.shade700 : Colors.red.shade700),
+        ),
+      ),
+    );
+  }
+
+  // ✅ PDF PREVIEW DAN DOWNLOAD
+  Future<void> _showPdfPreview(BuildContext context, Map<String, dynamic> data) async {
+    try {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Preview Laporan PDF'),
+          content: SizedBox(
+            width: MediaQuery.of(context).size.width * 0.9,
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: PdfPreview(
+              build: (format) => _generatePdf(data),
+              allowPrinting: false,
+              allowSharing: false,
+              canChangePageFormat: false,
+              canChangeOrientation: false,
+              canDebug: false,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Tutup'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                final bytes = await _generatePdf(data);
+                await _savePdf(bytes);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
+              child: const Text('Download PDF', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
       );
-
-      await Printing.layoutPdf(onLayout: (format) async => pdf.save());
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('PDF berhasil dibuat'), backgroundColor: Colors.green),
-        );
-      }
     } catch (e) {
-      print('❌ PDF export error: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal membuat PDF: $e'), backgroundColor: Colors.red),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error preview PDF: $e'), backgroundColor: Colors.red),
+      );
     }
   }
 
-  pw.Widget _pdfMetricRow(String title, String value) {
+  // ✅ GENERATE PDF DENGAN DATA LENGKAP
+  Future<Uint8List> _generatePdf(Map<String, dynamic> data) async {
+    final pdf = pw.Document();
+    final selectedMonth = data['selectedMonth'] as DateTime;
+    final monthYear = DateFormat('MMMM yyyy', 'id_ID').format(selectedMonth);
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Header(
+              level: 0,
+              child: pw.Text('Laporan Admin Dashboard', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
+            ),
+            pw.SizedBox(height: 8),
+            pw.Text('Periode: $monthYear'),
+            pw.SizedBox(height: 8),
+            pw.Text('Dibuat pada: ${DateFormat('dd MMM yyyy HH:mm').format(DateTime.now())}'),
+            pw.SizedBox(height: 24),
+
+            // ✅ METRICS DENGAN GROWTH DATA
+            _pdfMetricRowWithGrowth('User Baru Bulan Ini', data['newUsers'].toString(), data['userGrowth']),
+            _pdfMetricRowWithGrowth('User Verified Baru', data['newVerifiedUsers'].toString(), data['verifiedGrowth']),
+            _pdfMetricRowWithGrowth('Total User (Akumulatif)', data['totalUsersAccumulated'].toString(), data['userAccumulatedGrowth']),
+            _pdfMetricRowWithGrowth('Total Verified (Akumulatif)', data['totalVerifiedAccumulated'].toString(), data['verifiedAccumulatedGrowth']),
+            pw.SizedBox(height: 12),
+            _pdfMetricRowWithGrowth('Transaksi Bulan Ini', data['totalTransactions'].toString(), data['transactionGrowth']),
+            _pdfMetricRowWithGrowth('Transaksi Selesai', data['completedTransactions'].toString(), data['completedGrowth']),
+            _pdfMetricRowWithGrowth(
+                'Total Revenue',
+                NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(data['totalRevenue']),
+                data['revenueGrowth']
+            ),
+
+            pw.Spacer(),
+            pw.Divider(),
+            pw.SizedBox(height: 8),
+            pw.Text('Catatan:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.Text('• Persentase pertumbuhan dibandingkan bulan sebelumnya', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('• User Baru: registrasi dalam bulan dipilih', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('• User Verified Baru: terverifikasi dalam bulan dipilih', style: const pw.TextStyle(fontSize: 10)),
+            pw.Text('• Data akumulatif: total hingga akhir bulan dipilih', style: const pw.TextStyle(fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  // PDF metric row dengan growth (sama seperti sebelumnya)
+  pw.Widget _pdfMetricRowWithGrowth(String title, String value, double growth) {
+    final sign = growth > 0 ? '+' : '';
+    final growthText = growth == 0 ? '0%' : '$sign${growth.toStringAsFixed(1)}%';
+
     return pw.Container(
       margin: const pw.EdgeInsets.only(bottom: 12),
       padding: const pw.EdgeInsets.symmetric(vertical: 8),
@@ -341,10 +476,74 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.Text('Pertumbuhan: $growthText', style: const pw.TextStyle(fontSize: 10)),
+            ],
+          ),
           pw.Text(value, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
         ],
       ),
     );
+  }
+
+  // ✅ SAVE PDF (lanjutkan yang terpotong sebelumnya)
+  Future<void> _savePdf(Uint8List bytes) async {
+    try {
+      final now = DateTime.now();
+      final selectedMonth = ref.read(selectedMonthProvider);
+      final filename = 'Laporan_${DateFormat('yyyy-MM').format(selectedMonth)}_${DateFormat('dd-HHmm').format(now)}.pdf';
+
+      if (Platform.isAndroid) {
+        final directory = Directory('/storage/emulated/0/Download');
+        if (await directory.exists()) {
+          final file = File('${directory.path}/$filename');
+          await file.writeAsBytes(bytes);
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('PDF disimpan ke Download/$filename'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 4),
+                action: SnackBarAction(
+                  label: 'OK',
+                  onPressed: () {},
+                ),
+              ),
+            );
+          }
+        } else {
+          // Fallback
+          final dir = await getExternalStorageDirectory();
+          final file = File('${dir!.path}/$filename');
+          await file.writeAsBytes(bytes);
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('PDF disimpan ke ${file.path}'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } else {
+        // iOS atau platform lain
+        await Printing.sharePdf(bytes: bytes, filename: filename);
+      }
+    } catch (e) {
+      print('❌ Save PDF error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyimpan PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
