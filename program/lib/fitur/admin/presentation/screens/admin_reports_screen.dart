@@ -158,7 +158,7 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
                             Row(
                               children: [
                                 Text(
-                                  'Total Revenue',
+                                  'Total Transaksi Selesai',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w500,
@@ -432,7 +432,6 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
             pw.Text('Dibuat pada: ${DateFormat('dd MMM yyyy HH:mm').format(DateTime.now())}'),
             pw.SizedBox(height: 24),
 
-            // ✅ METRICS DENGAN GROWTH DATA
             _pdfMetricRowWithGrowth('User Baru Bulan Ini', data['newUsers'].toString(), data['userGrowth']),
             _pdfMetricRowWithGrowth('User Verified Baru', data['newVerifiedUsers'].toString(), data['verifiedGrowth']),
             _pdfMetricRowWithGrowth('Total User (Akumulatif)', data['totalUsersAccumulated'].toString(), data['userAccumulatedGrowth']),
@@ -441,7 +440,7 @@ class _AdminReportsScreenState extends ConsumerState<AdminReportsScreen> {
             _pdfMetricRowWithGrowth('Transaksi Bulan Ini', data['totalTransactions'].toString(), data['transactionGrowth']),
             _pdfMetricRowWithGrowth('Transaksi Selesai', data['completedTransactions'].toString(), data['completedGrowth']),
             _pdfMetricRowWithGrowth(
-                'Total Revenue',
+                'Total Transaksi Selesai',
                 NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(data['totalRevenue']),
                 data['revenueGrowth']
             ),

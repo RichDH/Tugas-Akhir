@@ -40,7 +40,7 @@ class AdminDashboardScreen extends ConsumerWidget {
             _buildCard(context, 'Pengguna Terverifikasi', Icons.verified_user, verifiedUsers, (v) => v.toString(), color: Colors.green),
             _buildCard(context, 'Akun Ditutup', Icons.person_off, closedAccounts, (v) => v.toString(), color: Colors.red),
             _buildCard(context, 'Total Transaksi', Icons.receipt_long, totalTransactions, (v) => v.toString(), color: Colors.teal),
-            _buildCard(context, 'Revenue Selesai', Icons.monetization_on, completedRevenue, (v) => currency.format(v), color: Colors.indigo),
+            _buildCard(context, 'Nominal Transaksi Selesai', Icons.monetization_on, completedRevenue, (v) => currency.format(v), color: Colors.indigo),
             _buildCard(context, 'Post Aktif', Icons.post_add, totalPosts, (v) => v.toString(), color: Colors.purple),
             _buildCard(context, 'Live Aktif', Icons.live_tv, liveOngoing, (v) => v.toString(), color: Colors.pink),
           ],
