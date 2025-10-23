@@ -351,6 +351,22 @@ class App extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<DocumentSnapshot?>>(
+      currentUserDocStreamProvider,
+          (prev, next) {
+        next.whenData((snapshot) {
+          if (snapshot != null && snapshot.exists) {
+            final data = snapshot.data() as Map<String, dynamic>?;
+            if (data?['deleted'] == true) {
+              // Auto-logout jika user dihapus
+              final auth = ref.read(firebaseAuthProvider);
+              auth.signOut();
+            }
+          }
+        });
+      },
+    );
+    
     final router = ref.watch(goRouter);
     return MaterialApp.router(
       title: 'Aplikasi Jasa Titip',

@@ -35,8 +35,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
-      // Jika berhasil, authStateChangesProvider akan otomatis mengupdate,
-      // dan GoRouter akan melakukan redirect.
+      final cred = await _auth.signInWithEmailAndPassword(email: email, password: password);
+
+      final uid = cred.user?.uid;
+      if (uid != null) {
+        final userDoc = await _firestore.collection('users').doc(uid).get();
+        final data = userDoc.data() ?? {};
+        final isDeleted = data['deleted'] == true;
+
+        if (isDeleted) {
+          await _auth.signOut();
+
+          final reason = data['closedReason'] as String? ?? 'pelanggaran kebijakan';
+          state = state.copyWith(
+            isLoading: false,
+            error: 'Akun ditutup karena: $reason. Hubungi admin untuk informasi lebih lanjut.',
+          );
+          return;
+        }
+      }
       await FCMService().init();
       state = state.copyWith(isLoading: false);
       // Login berhasil, matikan loading

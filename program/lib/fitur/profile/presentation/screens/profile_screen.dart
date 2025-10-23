@@ -8,7 +8,9 @@ import 'package:program/fitur/profile/presentation/widgets/video_thumbnail_widge
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:program/fitur/admin/application/admin_user_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../admin/application/admin_user_service.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../post/domain/entities/post.dart';
 
@@ -45,6 +47,7 @@ class ProfileScreen extends ConsumerWidget {
     }
 
     final totalPostsCount = _safeCount(userPostsAsync) + _safeCount(userRequestsAsync);
+
 
     return Scaffold(
       appBar: AppBar(
@@ -324,6 +327,147 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _showCloseAccountDialog(
+      BuildContext context,
+      WidgetRef ref,
+      String targetUserId,
+      String username,
+      ) async {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Tutup Akun @$username'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Akun akan dinonaktifkan dan semua postingan disembunyikan.',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Alasan Penutupan *',
+                  border: OutlineInputBorder(),
+                  helperText: 'Alasan ini akan ditampilkan kepada user',
+                ),
+                maxLines: 3,
+                maxLength: 200,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Alasan tidak boleh kosong';
+                  }
+                  if (value.trim().length < 10) {
+                    return 'Alasan minimal 10 karakter';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.of(dialogContext).pop({
+                  'reason': reasonController.text.trim(),
+                  'username': username,
+                });
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Tutup Akun'),
+          ),
+        ],
+      ),
+    );
+
+    reasonController.dispose();
+
+    if (result != null && context.mounted) {
+      await _processCloseAccount(context, ref, targetUserId, result);
+    }
+  }
+
+  Future<void> _processCloseAccount(
+      BuildContext context,
+      WidgetRef ref,
+      String targetUserId,
+      Map<String, String> data,
+      ) async {
+    final reason = data['reason']!;
+    final username = data['username']!;
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Menutup akun...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final currentUser = ref.read(firebaseAuthProvider).currentUser;
+      final adminEmail = currentUser?.email ?? 'unknown';
+
+      final service = AdminUserService(FirebaseFirestore.instance);
+      await service.closeUserAccount(
+        targetUserId: targetUserId,
+        reason: reason,
+        closedBy: adminEmail,
+      );
+
+      if (context.mounted) {
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Akun @$username berhasil ditutup'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        context.go('/admin');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        // Close loading dialog
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menutup akun: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Widget _buildProfileHeader({
     required BuildContext context,
     required String username,
@@ -400,17 +544,11 @@ class ProfileScreen extends ConsumerWidget {
                         child: const Text('Edit Profil'),
                       );
                     } else if (isAdmin) {
+                      // Admin melihat profil user lain
                       return SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Fitur tutup akun akan dibuat segera'),
-                                backgroundColor: Colors.orange,
-                              ),
-                            );
-                          },
+                          onPressed: () => _showCloseAccountDialog(context, ref, targetUserId, username),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             foregroundColor: Colors.white,
@@ -419,7 +557,8 @@ class ProfileScreen extends ConsumerWidget {
                           child: const Text('Tutup Akun'),
                         ),
                       );
-                    } else {
+                    }
+                    else {
                       return Row(
                         children: [
                           Expanded(

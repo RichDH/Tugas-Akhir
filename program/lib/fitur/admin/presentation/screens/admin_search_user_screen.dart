@@ -32,17 +32,23 @@ class AdminSearchUserScreen extends ConsumerWidget {
           Expanded(
             child: results.when(
               data: (snap) {
+
+                final filteredDocs = snap.docs.where((d) {
+                  final m = d.data() as Map<String, dynamic>;
+                  return !m.containsKey('deleted') || m['deleted'] == false;
+                }).toList();
+
                 if (query.isEmpty) {
                   return const Center(child: Text('Ketik untuk mencari akun.'));
                 }
-                if (snap.docs.isEmpty) {
+                if (snap.docs.isEmpty || filteredDocs.isEmpty) {
                   return const Center(child: Text('Tidak ada akun ditemukan.'));
                 }
                 return ListView.separated(
-                  itemCount: snap.docs.length,
+                  itemCount: filteredDocs.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
-                    final doc = snap.docs[i];
+                    final doc = filteredDocs[i];
                     final data = doc.data() as Map<String, dynamic>;
                     final username = (data['username'] ?? '').toString();
                     final name = (data['name'] ?? '').toString();

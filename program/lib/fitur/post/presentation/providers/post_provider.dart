@@ -217,8 +217,8 @@ class CreatePostNotifier extends StateNotifier<AsyncValue<void>> {
             .doc(currentUser.uid)
             .get();
 
-        if (userDoc.exists && userDoc.data()?['name'] != null) {
-          username = userDoc.data()!['name'];
+        if (userDoc.exists && userDoc.data()?['username'] != null) {
+          username = userDoc.data()!['username'];
         } else if (currentUser.displayName?.isNotEmpty == true) {
           username = currentUser.displayName!;
         }

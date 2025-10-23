@@ -37,3 +37,11 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
   final user = ref.watch(currentUserProvider);
   return user != null;
 });
+
+final currentUserDocStreamProvider = StreamProvider<DocumentSnapshot?>((ref) {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return Stream.value(null); // Return null stream jika tidak login
+
+  final firestore = ref.watch(firebaseFirestoreProvider);
+  return firestore.collection('users').doc(user.uid).snapshots();
+});

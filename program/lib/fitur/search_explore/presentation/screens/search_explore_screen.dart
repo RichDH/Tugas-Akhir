@@ -36,20 +36,26 @@ class SearchExploreScreen extends ConsumerWidget {
             child: searchResults.when(
               // Kondisi saat stream memberikan data (termasuk data kosong)
               data: (snapshot) {
+                final filteredDocs = snapshot.docs.where((d) {
+                  final m = d.data() as Map<String, dynamic>;
+                  // tampilkan jika deleted tidak ada atau false
+                  return !m.containsKey('deleted') || m['deleted'] == false;
+                }).toList();
+
                 // Jika belum ada input, tampilkan pesan awal
                 if (searchQuery.isEmpty) {
                   return const Center(child: Text('Masukkan nama pengguna untuk memulai pencarian.'));
                 }
                 // Jika sudah ada input tapi tidak ada hasil
-                if (snapshot.docs.isEmpty) {
+                if (snapshot.docs.isEmpty || filteredDocs.isEmpty) {
                   return const Center(child: Text('Pengguna tidak ditemukan.'));
                 }
 
                 // Jika ada hasil, tampilkan list
                 return ListView.builder(
-                  itemCount: snapshot.docs.length,
+                  itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
-                    final userDoc = snapshot.docs[index];
+                    final userDoc = filteredDocs[index];
                     final userData = userDoc.data() as Map<String, dynamic>;
 
                     return ListTile(
