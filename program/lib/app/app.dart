@@ -60,6 +60,7 @@ import '../fitur/profile/presentation/screens/history_screen.dart';
 import '../fitur/profile/presentation/screens/list_interested_order_screen.dart';
 import '../fitur/profile/presentation/screens/return_response_list_screen.dart';
 import '../fitur/profile/presentation/screens/return_response_screen.dart';
+import '../fitur/story/presentation/providers/story_provider.dart';
 import '../fitur/story/presentation/screens/create_story_screen.dart';
 import '../fitur/story/presentation/screens/story_viewer_screen.dart';
 
@@ -206,6 +207,7 @@ final goRouter = Provider<GoRouter>((ref) {
         path: '/create-story',
         builder: (context, state) => const CreateStoryScreen(),
       ),
+      // Di router configuration, update route:
       GoRoute(
         path: '/story-viewer/:userId',
         builder: (context, state) {
@@ -213,6 +215,19 @@ final goRouter = Provider<GoRouter>((ref) {
           return StoryViewerScreen(userId: userId);
         },
       ),
+
+      GoRoute(
+        path: '/story-viewer/:userId/:storyIndex',
+        builder: (context, state) {
+          final userId = state.pathParameters['userId']!;
+          final storyIndex = int.tryParse(state.pathParameters['storyIndex'] ?? '0') ?? 0;
+          return StoryViewerScreen(
+            userId: userId,
+            startIndex: storyIndex,
+          );
+        },
+      ),
+
 
 
 
@@ -414,6 +429,24 @@ class App extends ConsumerWidget {
         });
       },
     );
+
+    ref.listen(authStateChangesProvider, (previous, next) {
+      next.whenOrNull(
+        data: (user) {
+          if (user == null) {
+            // User logout, clear semua story providers
+            print('🚪 User logged out, clearing story providers');
+            ref.invalidate(currentUserStoryProvider);
+            ref.invalidate(activeStoriesProvider);
+          } else {
+            // User login, refresh providers
+            print('🔑 User logged in: ${user.uid}, refreshing story providers');
+            ref.invalidate(currentUserStoryProvider);
+            ref.invalidate(activeStoriesProvider);
+          }
+        },
+      );
+    });
     
     final router = ref.watch(goRouter);
     return MaterialApp.router(

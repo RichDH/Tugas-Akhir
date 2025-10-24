@@ -276,6 +276,46 @@ async function runCartCleanup() {
   }
 }
 
+// ✅ FUNGSI CRON JOB 4: STORY CLEANUP (expire setelah 2 menit)
+async function runStoryCleanup() {
+  console.log('[CRON] Membersihkan story yang sudah expired...');
+  try {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+
+    const snap = await db
+      .collection('stories')
+      .where('isActive', '==', true)
+      .where('expiresAt', '<=', now)
+      .limit(500)
+      .get();
+
+    if (snap.empty) {
+      console.log('[STORY-CLEANUP] Tidak ada story expired.');
+      return { updated: 0 };
+    }
+
+    const batch = db.batch();
+    let updated = 0;
+
+    snap.forEach(doc => {
+      batch.update(doc.ref, {
+        isActive: false,
+        deletedAt: now,
+      });
+      updated++;
+    });
+
+    await batch.commit();
+    console.log(`[STORY-CLEANUP] ✅ Nonaktifkan ${updated} story expired`);
+    return { updated };
+  } catch (error) {
+    console.error('[STORY-CLEANUP ERROR]:', error.message);
+    throw error;
+  }
+}
+
+
 // ✅ ENDPOINT CRON UNTUK VERCEL
 app.get('/cron/auto-complete-transactions', async (req, res) => {
   try {
@@ -307,6 +347,17 @@ app.get('/cron/cart-cleanup', async (req, res) => {
   }
 });
 
+app.get('/cron/story-cleanup', async (req, res) => {
+  try {
+    const result = await runStoryCleanup();
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Cron story cleanup error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 // ✅ JALANKAN NODE-CRON HANYA SAAT DEVELOPMENT (TIDAK DI VERCEL)
 const isVercel = !!process.env.VERCEL;
 if (!isVercel) {
@@ -315,6 +366,7 @@ if (!isVercel) {
   cron.schedule('*/2 * * * *', runAutoCompleteTransactions);
   cron.schedule('*/2 * * * *', runAutoApproveReturns);
   cron.schedule('*/1 * * * *', runCartCleanup);
+  cron.schedule('*/2 * * * *', runStoryCleanup);
 }
 
 // ✅ ENDPOINT LAINNYA (TETAP SAMA)

@@ -172,6 +172,7 @@ class FeedScreen extends ConsumerWidget {
                 },
                 child: Text(filter.label),
               ),
+
             );
           }).toList(),
         ),

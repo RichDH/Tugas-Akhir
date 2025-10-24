@@ -6,7 +6,7 @@ class Story {
   final String id;
   final String userId;
   final String username;
-  final String userAvatarUrl;
+  final String? profileImageUrl;
   final String mediaUrl;
   final String? text;
   final StoryType type;
@@ -19,7 +19,7 @@ class Story {
     required this.id,
     required this.userId,
     required this.username,
-    this.userAvatarUrl = '',
+    this.profileImageUrl,
     required this.mediaUrl,
     this.text,
     required this.type,
@@ -35,7 +35,7 @@ class Story {
       id: doc.id,
       userId: data['userId'] ?? '',
       username: data['username'] ?? '',
-      userAvatarUrl: data['userAvatarUrl'] ?? '',
+      profileImageUrl: data['profileImageUrl'],
       mediaUrl: data['mediaUrl'] ?? '',
       text: data['text'],
       type: StoryType.values.firstWhere(
@@ -53,7 +53,7 @@ class Story {
     return {
       'userId': userId,
       'username': username,
-      'userAvatarUrl': userAvatarUrl,
+      'profileImageUrl': profileImageUrl,
       'mediaUrl': mediaUrl,
       'text': text,
       'type': type.name,
@@ -68,7 +68,7 @@ class Story {
     String? id,
     String? userId,
     String? username,
-    String? userAvatarUrl,
+    String? profileImageUrl,
     String? mediaUrl,
     String? text,
     StoryType? type,
@@ -81,7 +81,7 @@ class Story {
       id: id ?? this.id,
       userId: userId ?? this.userId,
       username: username ?? this.username,
-      userAvatarUrl: userAvatarUrl ?? this.userAvatarUrl,
+      profileImageUrl: profileImageUrl ?? this.profileImageUrl,
       mediaUrl: mediaUrl ?? this.mediaUrl,
       text: text ?? this.text,
       type: type ?? this.type,

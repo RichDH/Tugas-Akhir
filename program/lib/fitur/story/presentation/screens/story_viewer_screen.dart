@@ -1,3 +1,4 @@
+// lib/fitur/story/presentation/screens/story_viewer_screen.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -10,10 +11,12 @@ import '../../domain/entities/story.dart';
 
 class StoryViewerScreen extends ConsumerStatefulWidget {
   final String userId;
+  final int? startIndex;
 
   const StoryViewerScreen({
     Key? key,
     required this.userId,
+    this.startIndex,
   }) : super(key: key);
 
   @override
@@ -21,17 +24,21 @@ class StoryViewerScreen extends ConsumerStatefulWidget {
 }
 
 class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
-  List<Story> _stories = [];
+  List<Story> _allStories = [];
   int _currentIndex = 0;
   Timer? _progressTimer;
   double _progress = 0.0;
   VideoPlayerController? _videoController;
   bool _isPaused = false;
+  bool _isLoading = true;
+  bool _shouldPop = false;
 
   @override
   void initState() {
     super.initState();
-    _loadUserStories();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAllStories();
+    });
   }
 
   @override
@@ -41,34 +48,90 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
     super.dispose();
   }
 
-  void _loadUserStories() async {
+  void _loadAllStories() {
     final storiesAsync = ref.read(activeStoriesProvider);
     storiesAsync.when(
       data: (allStories) {
-        final userStories = allStories
-            .where((story) => story.userId == widget.userId)
-            .toList();
-
-        if (userStories.isNotEmpty) {
+        if (allStories.isEmpty) {
+          print('❌ No stories available');
           setState(() {
-            _stories = userStories;
-            _currentIndex = 0;
+            _shouldPop = true;
+            _isLoading = false;
           });
-          _startStory();
-        } else {
-          context.pop();
+          _closeViewer();
+          return;
         }
+
+        // Group stories by user untuk urutan yang benar
+        final Map<String, List<Story>> groupedStories = {};
+        for (final story in allStories) {
+          if (groupedStories[story.userId] == null) {
+            groupedStories[story.userId] = [];
+          }
+          groupedStories[story.userId]!.add(story);
+        }
+
+        // Flatten stories dengan urutan: user yang dipilih dulu, lalu user lain
+        final List<Story> orderedStories = [];
+
+        // Tambahkan stories dari user yang dipilih dulu
+        if (groupedStories.containsKey(widget.userId)) {
+          orderedStories.addAll(groupedStories[widget.userId]!);
+          groupedStories.remove(widget.userId);
+        }
+
+        // Tambahkan stories dari user lain
+        for (final userStories in groupedStories.values) {
+          orderedStories.addAll(userStories);
+        }
+
+        if (orderedStories.isEmpty) {
+          print('❌ No stories found after ordering');
+          setState(() {
+            _shouldPop = true;
+            _isLoading = false;
+          });
+          _closeViewer();
+          return;
+        }
+
+        print('📖 Loaded ${orderedStories.length} total stories');
+        print('📖 Starting with user: ${widget.userId}');
+
+        // Set initial index dari startIndex parameter atau 0
+        final initialIndex = widget.startIndex ?? 0;
+        final safeIndex = initialIndex.clamp(0, orderedStories.length - 1);
+
+        setState(() {
+          _allStories = orderedStories;
+          _currentIndex = safeIndex;
+          _isLoading = false;
+        });
+
+        _startStory();
       },
-      loading: () {},
-      error: (_, __) => context.pop(),
+      loading: () {
+        print('⏳ Stories still loading...');
+      },
+      error: (error, stack) {
+        print('❌ Error loading stories: $error');
+        setState(() {
+          _shouldPop = true;
+          _isLoading = false;
+        });
+        _closeViewer();
+      },
     );
   }
 
   void _startStory() {
+    if (_allStories.isEmpty || _currentIndex >= _allStories.length) return;
+
     _progressTimer?.cancel();
     _progress = 0.0;
 
-    final currentStory = _stories[_currentIndex];
+    final currentStory = _allStories[_currentIndex];
+    print('🎬 Starting story ${_currentIndex + 1}/${_allStories.length}: ${currentStory.username}');
 
     // Mark sebagai sudah dilihat
     ref.read(storyNotifierProvider.notifier).markAsViewed(currentStory.id);
@@ -84,25 +147,34 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
     _videoController?.dispose();
     _videoController = VideoPlayerController.network(videoUrl);
 
-    await _videoController!.initialize();
-    _videoController!.play();
+    try {
+      await _videoController!.initialize();
+      _videoController!.play();
 
-    _videoController!.addListener(() {
-      if (_videoController!.value.isInitialized && !_isPaused) {
-        final duration = _videoController!.value.duration.inMilliseconds;
-        final position = _videoController!.value.position.inMilliseconds;
+      _videoController!.addListener(() {
+        if (_videoController!.value.isInitialized && !_isPaused && mounted) {
+          final duration = _videoController!.value.duration.inMilliseconds;
+          final position = _videoController!.value.position.inMilliseconds;
 
-        setState(() {
-          _progress = position / duration;
-        });
+          if (duration > 0) {
+            setState(() {
+              _progress = position / duration;
+            });
 
-        if (_videoController!.value.position >= _videoController!.value.duration) {
-          _nextStory();
+            if (_videoController!.value.position >= _videoController!.value.duration) {
+              _nextStory();
+            }
+          }
         }
-      }
-    });
+      });
 
-    setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (e) {
+      print('❌ Error initializing video: $e');
+      _nextStory();
+    }
   }
 
   void _startImageTimer() {
@@ -110,7 +182,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
     const interval = Duration(milliseconds: 50);
 
     _progressTimer = Timer.periodic(interval, (timer) {
-      if (!_isPaused) {
+      if (!_isPaused && mounted) {
         setState(() {
           _progress += interval.inMilliseconds / duration.inMilliseconds;
         });
@@ -124,26 +196,48 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
   }
 
   void _nextStory() {
-    if (_currentIndex < _stories.length - 1) {
+    print('➡️ Next story requested - current: $_currentIndex, total: ${_allStories.length}');
+
+    if (_currentIndex < _allStories.length - 1) {
       setState(() {
         _currentIndex++;
       });
       _startStory();
     } else {
-      context.pop();
+      print('✅ Reached end of stories, closing viewer');
+      _closeViewer();
     }
   }
 
   void _previousStory() {
+    print('⬅️ Previous story requested - current: $_currentIndex');
+
     if (_currentIndex > 0) {
       setState(() {
         _currentIndex--;
       });
       _startStory();
+    } else {
+      print('🔚 At beginning of stories, closing viewer');
+      _closeViewer();
+    }
+  }
+
+  void _closeViewer() {
+    _progressTimer?.cancel();
+    _videoController?.pause();
+
+    if (mounted) {
+      Future.delayed(const Duration(milliseconds: 50), () {
+        if (mounted) {
+          Navigator.of(context).pop();
+        }
+      });
     }
   }
 
   void _pauseStory() {
+    print('⏸️ Story paused');
     setState(() {
       _isPaused = true;
     });
@@ -152,20 +246,58 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
   }
 
   void _resumeStory() {
+    print('▶️ Story resumed');
     setState(() {
       _isPaused = false;
     });
 
-    if (_stories[_currentIndex].type == StoryType.video) {
+    if (_allStories[_currentIndex].type == StoryType.video) {
       _videoController?.play();
     } else {
-      _startImageTimer();
+      // Resume dari posisi sebelumnya
+      final remainingProgress = 1.0 - _progress;
+      const totalDuration = Duration(seconds: 7);
+      final remainingTime = Duration(
+        milliseconds: (remainingProgress * totalDuration.inMilliseconds).round(),
+      );
+
+      const interval = Duration(milliseconds: 50);
+      _progressTimer = Timer.periodic(interval, (timer) {
+        if (!_isPaused && mounted) {
+          setState(() {
+            _progress += interval.inMilliseconds / totalDuration.inMilliseconds;
+          });
+
+          if (_progress >= 1.0) {
+            timer.cancel();
+            _nextStory();
+          }
+        }
+      });
     }
+  }
+
+  void _handleTap(TapUpDetails details) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final tapX = details.localPosition.dx;
+
+    print('👆 Screen tapped at x: $tapX (screen width: $screenWidth)');
+
+    if (tapX < screenWidth * 0.3) {
+      // Tap di bagian kiri - previous story
+      print('⬅️ Left tap detected - going to previous story');
+      _previousStory();
+    } else if (tapX > screenWidth * 0.7) {
+      // Tap di bagian kanan - next story
+      print('➡️ Right tap detected - going to next story');
+      _nextStory();
+    }
+    // Tap di tengah tidak melakukan apa-apa (bisa digunakan untuk pause/resume jika diperlukan)
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_stories.isEmpty) {
+    if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,
         body: Center(
@@ -174,21 +306,24 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
       );
     }
 
-    final currentStory = _stories[_currentIndex];
+    if (_shouldPop || _allStories.isEmpty) {
+      return const Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text(
+            'No stories available',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    }
+
+    final currentStory = _allStories[_currentIndex];
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
-        onTapDown: (details) {
-          final screenWidth = MediaQuery.of(context).size.width;
-          final tapX = details.localPosition.dx;
-
-          if (tapX < screenWidth * 0.3) {
-            _previousStory();
-          } else if (tapX > screenWidth * 0.7) {
-            _nextStory();
-          }
-        },
+        onTapUp: _handleTap,
         onLongPressStart: (_) => _pauseStory(),
         onLongPressEnd: (_) => _resumeStory(),
         child: Stack(
@@ -249,11 +384,11 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                 children: [
                   // Progress Indicators
                   Row(
-                    children: List.generate(_stories.length, (index) {
+                    children: List.generate(_allStories.length, (index) {
                       return Expanded(
                         child: Container(
                           height: 3,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          margin: const EdgeInsets.symmetric(horizontal: 1),
                           decoration: BoxDecoration(
                             color: Colors.white30,
                             borderRadius: BorderRadius.circular(1.5),
@@ -284,11 +419,11 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundImage: currentStory.userAvatarUrl.isNotEmpty
-                            ? CachedNetworkImageProvider(currentStory.userAvatarUrl)
+                        backgroundImage: currentStory.profileImageUrl != null && currentStory.profileImageUrl!.isNotEmpty
+                            ? CachedNetworkImageProvider(currentStory.profileImageUrl!)
                             : null,
                         backgroundColor: Colors.grey[300],
-                        child: currentStory.userAvatarUrl.isEmpty
+                        child: currentStory.profileImageUrl == null || currentStory.profileImageUrl!.isEmpty
                             ? Text(
                           currentStory.username.isNotEmpty
                               ? currentStory.username[0].toUpperCase()
@@ -322,8 +457,17 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                           ],
                         ),
                       ),
+                      // Story counter
+                      Text(
+                        '${_currentIndex + 1}/${_allStories.length}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       IconButton(
-                        onPressed: () => context.pop(),
+                        onPressed: _closeViewer,
                         icon: const Icon(
                           Icons.close,
                           color: Colors.white,
@@ -342,6 +486,42 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                   Icons.pause_circle_filled,
                   color: Colors.white70,
                   size: 80,
+                ),
+              ),
+
+            // Debug tap zones (remove in production)
+            if (false) // Set to true untuk debugging
+              Positioned.fill(
+                child: Row(
+                  children: [
+                    // Left tap zone
+                    Expanded(
+                      flex: 3,
+                      child: Container(
+                        color: Colors.red.withOpacity(0.2),
+                        child: const Center(
+                          child: Icon(Icons.arrow_back, color: Colors.white, size: 30),
+                        ),
+                      ),
+                    ),
+                    // Middle tap zone (no action)
+                    Expanded(
+                      flex: 4,
+                      child: Container(
+                        color: Colors.transparent,
+                      ),
+                    ),
+                    // Right tap zone
+                    Expanded(
+                      flex: 3,
+                      child: Container(
+                        color: Colors.green.withOpacity(0.2),
+                        child: const Center(
+                          child: Icon(Icons.arrow_forward, color: Colors.white, size: 30),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],

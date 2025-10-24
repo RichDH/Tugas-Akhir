@@ -123,6 +123,7 @@ class StoryRepositoryImpl implements StoryRepository {
     }
   }
 
+// lib/fitur/story/data/repositories/story_repository_impl.dart
   @override
   Stream<List<Story>> getActiveStoriesFromFollowing(String currentUserId) {
     return _firestore
@@ -133,27 +134,62 @@ class StoryRepositoryImpl implements StoryRepository {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
-      // Ambil list user yang di follow
-      final followingDoc = await _firestore
-          .collection('follows')
-          .doc(currentUserId)
-          .get();
 
-      final following = followingDoc.exists
-          ? List<String>.from(followingDoc.data()?['following'] ?? [])
-          : <String>[];
+      try {
+        // Ambil following list dari SUBCOLLECTION (bukan field)
+        final followingSnapshot = await _firestore
+            .collection('users')
+            .doc(currentUserId)
+            .collection('following') // ← Ini subcollection
+            .get();
 
-      // Filter story dari user yang difollow + user sendiri
-      final stories = snapshot.docs
-          .map((doc) => Story.fromFirestore(doc))
-          .where((story) =>
-      following.contains(story.userId) ||
-          story.userId == currentUserId)
-          .toList();
+        // Extract user IDs dari document IDs di subcollection
+        final followingUserIds = followingSnapshot.docs
+            .map((doc) => doc.id) // document ID = user ID yang di-follow
+            .toList();
 
-      return stories;
+        print('🔍 Current user: $currentUserId');
+        print('🔍 Following count: ${followingUserIds.length}');
+        print('🔍 Following list: $followingUserIds');
+
+        if (followingUserIds.isEmpty) {
+          print('⚠️ User tidak follow siapa-siapa, hanya tampilkan story sendiri');
+        }
+
+        // Ambil semua stories dan filter
+        final allStories = snapshot.docs.map((doc) {
+          try {
+            return Story.fromFirestore(doc);
+          } catch (e) {
+            print('❌ Error parsing story ${doc.id}: $e');
+            return null;
+          }
+        }).where((story) => story != null).cast<Story>().toList();
+
+        print('📊 Total stories in DB: ${allStories.length}');
+
+        // Filter berdasarkan following + current user
+        final filteredStories = allStories.where((story) {
+          final isFollowed = followingUserIds.contains(story.userId);
+          final isCurrentUser = story.userId == currentUserId;
+          final shouldShow = isFollowed || isCurrentUser;
+
+          print('👤 Story ${story.id} - User: ${story.userId} (${story.username}) - Show: $shouldShow (followed: $isFollowed, current: $isCurrentUser)');
+
+          return shouldShow;
+        }).toList();
+
+        print('✅ Filtered stories count: ${filteredStories.length}');
+
+        return filteredStories;
+      } catch (e) {
+        print('❌ Error in getActiveStoriesFromFollowing: $e');
+        return <Story>[];
+      }
     });
   }
+
+
 
   @override
   Future<Story?> getUserActiveStory(String userId) async {
@@ -169,14 +205,19 @@ class StoryRepositoryImpl implements StoryRepository {
           .get();
 
       if (snapshot.docs.isNotEmpty) {
-        return Story.fromFirestore(snapshot.docs.first);
+        final story = Story.fromFirestore(snapshot.docs.first);
+        print('📱 User $userId active story: ${story.id}'); // Debug log
+        return story;
       }
+
+      print('📱 No active story for user: $userId'); // Debug log
       return null;
     } catch (e) {
-      print('Error getting user story: $e');
+      print('❌ Error getting user story: $e');
       return null;
     }
   }
+
 
   @override
   Future<void> markStoryAsViewed(String storyId, String userId) async {
