@@ -7,6 +7,7 @@ import '../../../post/domain/entities/post.dart';
 import '../../../post/presentation/providers/post_provider.dart';
 import '../../domain/entities/feed_filter.dart';
 import '../providers/feed_filter_provider.dart';
+import '../providers/feed_provider.dart';
 import '../widgets/post_widget.dart';
 import '../widgets/short_widget.dart';
 import '../../../story/presentation/widgets/stories_list_widget.dart';
@@ -115,36 +116,6 @@ class FeedScreen extends ConsumerWidget {
     );
   }
 
-  // Widget _buildStoriesSection() {
-  //   return Container(
-  //     height: 100,
-  //     padding: const EdgeInsets.symmetric(vertical: 8.0),
-  //     child: ListView.builder(
-  //       scrollDirection: Axis.horizontal,
-  //       itemCount: 5, // Reduced for demo
-  //       itemBuilder: (context, index) {
-  //         return Padding(
-  //           padding: const EdgeInsets.symmetric(horizontal: 8.0),
-  //           child: Column(
-  //             children: [
-  //               CircleAvatar(
-  //                 radius: 30,
-  //                 backgroundColor: Colors.grey[300],
-  //                 child: Icon(Icons.person, size: 30, color: Colors.grey[600]),
-  //               ),
-  //               const SizedBox(height: 4),
-  //               Text(
-  //                 'User $index',
-  //                 style: const TextStyle(fontSize: 12),
-  //               ),
-  //             ],
-  //           ),
-  //         );
-  //       },
-  //     ),
-  //   );
-  // }
-
   Widget _buildStoriesSection() {
     return const StoriesListWidget();
   }
@@ -181,7 +152,7 @@ class FeedScreen extends ConsumerWidget {
   }
 
   Widget _buildPostsSection(WidgetRef ref, FeedFilter currentFilter) {
-    final postsAsyncValue = ref.watch(postsProvider);
+    final postsAsyncValue = ref.watch(feedProvider);
 
     return postsAsyncValue.when(
       data: (posts) {

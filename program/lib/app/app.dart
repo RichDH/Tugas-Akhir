@@ -37,6 +37,7 @@ import 'package:program/fitur/admin/presentation/screens/verification/admin_veri
 import 'package:program/fitur/admin/presentation/screens/verification/admin_verification_detail_screen.dart';
 import 'package:program/fitur/auth/presentation/providers/auth_provider.dart';
 
+import '../fitur/admin/presentation/screens/admin_ads_packages_screen.dart';
 import '../fitur/admin/presentation/screens/admin_create_announcement.dart';
 import '../fitur/admin/presentation/screens/admin_create_promo_screen.dart';
 import '../fitur/admin/presentation/screens/admin_manage_reports_screen.dart';
@@ -46,6 +47,7 @@ import '../fitur/admin/presentation/screens/chat/admin_chat_list_screen.dart';
 import '../fitur/admin/presentation/screens/chat/admin_chat_screen.dart';
 import '../fitur/admin/presentation/screens/return_finalize_screen.dart';
 import '../fitur/admin/presentation/screens/return_review_screen.dart';
+import '../fitur/ads/presentation/screens/user_buy_ads_screen.dart';
 import '../fitur/cart/presentation/screens/cart_screen.dart';
 import '../fitur/chat/presentation/screens/chat_admin_screen.dart';
 import '../fitur/jualbeli/presentation/screens/create_return_request_screen.dart';
@@ -277,6 +279,10 @@ final goRouter = Provider<GoRouter>((ref) {
         },
       ),
       GoRoute(
+        path: '/admin/ads-packages',
+        builder: (context, state) => const AdminAdsPackagesScreen(),
+      ),
+      GoRoute(
         path: '/admin/transactions',
         builder: (context, state) => const AdminTransactionsScreen(),
       ),
@@ -293,6 +299,10 @@ final goRouter = Provider<GoRouter>((ref) {
       GoRoute(path: '/history', builder: (context, state) => const HistoryScreen()),
       GoRoute(path: '/transaction-history', builder: (context, state) => const TransactionHistoryScreen()),
       GoRoute(path: '/request-history', builder: (context, state) => const RequestHistoryScreen()),
+      GoRoute(
+        path: '/buy-ads',
+        builder: (context, state) => const UserBuyAdsScreen(),
+      ),
 
       GoRoute(
         path: '/edit-profile',

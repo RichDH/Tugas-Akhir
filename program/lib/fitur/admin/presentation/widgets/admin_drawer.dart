@@ -93,6 +93,11 @@ class AdminDrawer extends ConsumerWidget {
             onTap: () => context.push('/admin/promos'),
           ),
           ListTile(
+            leading: const Icon(Icons.ad_units),
+            title: const Text('Kelola Paket Ads'),
+            onTap: () => context.push('/admin/ads-packages'),
+          ),
+          ListTile(
             leading: const Icon(Icons.receipt_long),
             title: const Text('Lihat Transaksi'),
             onTap: () => context.push('/admin/transactions'),

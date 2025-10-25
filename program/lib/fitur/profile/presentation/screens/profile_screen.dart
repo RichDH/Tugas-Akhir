@@ -126,6 +126,14 @@ class ProfileScreen extends ConsumerWidget {
                         ),
                       ),
                       const PopupMenuItem<String>(
+                        value: 'buy-ads',
+                        child: ListTile(
+                            leading: Icon(Icons.rocket_launch, color: Colors.purple),
+                            title: Text('Beli Ads'),
+                            subtitle: Text('Promosikan postingan Anda')
+                        ),
+                      ),
+                      const PopupMenuItem<String>(
                         value: 'list-interested-order',
                         child: ListTile(leading: Icon(Icons.assignment_turned_in, color: Colors.orange), title: Text('List Pesanan'), subtitle: Text('Kelola pesanan masuk')),
                       ),
@@ -155,6 +163,9 @@ class ProfileScreen extends ConsumerWidget {
                         break;
                       case 'chat-admin':
                         context.push('/chat-admin');
+                        break;
+                      case 'buy-ads':
+                        context.push('/buy-ads');
                         break;
                       case 'list-interested-order':
                         context.push('/list-interested-order');

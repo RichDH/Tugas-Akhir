@@ -36,6 +36,10 @@ class Post extends Equatable {
   final bool isActive;
   final bool deleted;
   final Timestamp? deletedAt;
+  final int? adsLevel;
+  final String? adsPackageType;
+  final Timestamp? adsStartDate;
+  final Timestamp? adsExpiredAt;
 
   const Post({
     required this.id,
@@ -68,6 +72,10 @@ class Post extends Equatable {
     this.isActive = true,
     this.deleted = false,
     this.deletedAt,
+    this.adsLevel,
+    this.adsPackageType,
+    this.adsStartDate,
+    this.adsExpiredAt,
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -104,6 +112,10 @@ class Post extends Equatable {
       isActive: data['isActive'] as bool? ?? true,
       deleted: data['deleted'] as bool? ?? false,
       deletedAt: data['deletedAt'] as Timestamp?,
+      adsLevel: data['adsLevel'] as int?,
+      adsPackageType: data['adsPackageType'] as String?,
+      adsStartDate: data['adsStartDate'] as Timestamp?,
+      adsExpiredAt: data['adsExpiredAt'] as Timestamp?,
     );
   }
 
@@ -166,7 +178,15 @@ class Post extends Equatable {
       'isActive': isActive,
       'deleted': deleted,
       'deletedAt': deletedAt,
+      'adsLevel': adsLevel,
+      'adsPackageType': adsPackageType,
+      'adsStartDate': adsStartDate,
+      'adsExpiredAt': adsExpiredAt,
     };
+  }
+  bool get hasActiveAds {
+    if (adsLevel == null || adsExpiredAt == null) return false;
+    return DateTime.now().isBefore(adsExpiredAt!.toDate());
   }
 
   Post copyWith({
@@ -200,6 +220,10 @@ class Post extends Equatable {
     bool? isActive,
     bool? deleted,
     Timestamp? deletedAt,
+    int? adsLevel,
+    String? adsPackageType,
+    Timestamp? adsStartDate,
+    Timestamp? adsExpiredAt,
   }) {
     return Post(
       id: id ?? this.id,
@@ -232,6 +256,10 @@ class Post extends Equatable {
       isActive: isActive ?? this.isActive,
       deleted: deleted ?? this.deleted,
       deletedAt: deletedAt ?? this.deletedAt,
+      adsLevel: adsLevel ?? this.adsLevel,
+      adsPackageType: adsPackageType ?? this.adsPackageType,
+      adsStartDate: adsStartDate ?? this.adsStartDate,
+      adsExpiredAt: adsExpiredAt ?? this.adsExpiredAt,
     );
   }
 
@@ -241,6 +269,7 @@ class Post extends Equatable {
     price, location, locationCity, locationLat, locationLng,
     condition, brand, size, weight, additionalNotes, imageUrls,
     videoUrl, createdAt, updatedAt, isLiked, likesCount,
-    commentsCount, currentOffers, likedBy, maxOffers, isActive, deleted, deletedAt
+    commentsCount, currentOffers, likedBy, maxOffers, isActive, deleted, deletedAt,
+    adsLevel, adsPackageType, adsStartDate, adsExpiredAt
   ];
 }
