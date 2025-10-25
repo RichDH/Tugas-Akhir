@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:program/fitur/search_explore/presentation/providers/search_provider.dart';
+import 'package:program/fitur/search_explore/presentation/widgets/filter_dialog.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../post/domain/entities/post.dart';
+import '../../domain/entities/search_filter.dart';
 
 class SearchExploreScreen extends ConsumerWidget {
   const SearchExploreScreen({super.key});
@@ -11,30 +13,88 @@ class SearchExploreScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final searchQuery = ref.watch(searchQueryProvider);
-    final searchResults = ref.watch(userSearchProvider(searchQuery));
+    final filter = ref.watch(searchFilterProvider);
+    final hasActiveFilter = !filter.isEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cari Pengguna'),
+        title: const Text('Pencarian'),
       ),
       body: Column(
         children: [
+          // Search Bar dengan Filter Button
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              autofocus: true, // Langsung fokus ke search bar
-              decoration: const InputDecoration(
-                hintText: 'Cari username...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (query) {
-                ref.read(searchQueryProvider.notifier).state = query;
-              },
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: 'Cari pengguna atau barang...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (query) {
+                      ref.read(searchQueryProvider.notifier).state = query;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(
+                    Icons.filter_list,
+                    color: hasActiveFilter ? Colors.blue : null,
+                  ),
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => const FilterDialog(),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
 
-          // Suggested ads section
+          // Filter indicator
+          if (hasActiveFilter)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.blue.shade50,
+              child: Row(
+                children: [
+                  Icon(Icons.filter_alt, size: 16, color: Colors.blue.shade700),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Filter aktif',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Spacer(),
+                  InkWell(
+                    onTap: () {
+                      ref.read(searchFilterProvider.notifier).state = const SearchFilter();
+                    },
+                    child: Text(
+                      'Hapus',
+                      style: TextStyle(
+                        color: Colors.blue.shade700,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Suggested ads section (tetap sama)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Align(
@@ -52,64 +112,448 @@ class SearchExploreScreen extends ConsumerWidget {
           _SuggestedAdsStrip(),
           const Divider(height: 16),
 
-
+          // Search Results
           Expanded(
-            child: searchResults.when(
-              // Kondisi saat stream memberikan data (termasuk data kosong)
-              data: (snapshot) {
-                final filteredDocs = snapshot.docs.where((d) {
-                  final m = d.data() as Map<String, dynamic>;
-                  // tampilkan jika deleted tidak ada atau false
-                  return !m.containsKey('deleted') || m['deleted'] == false;
-                }).toList();
+            child: searchQuery.isEmpty
+                ? const Center(child: Text('Masukkan kata kunci untuk memulai pencarian.'))
+                : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hasil Barang
+                  _SearchSection(
+                    title: 'Barang',
+                    icon: Icons.shopping_bag,
+                    child: _PostSearchResults(query: searchQuery),
+                  ),
+                  const SizedBox(height: 24),
 
-                // Jika belum ada input, tampilkan pesan awal
-                if (searchQuery.isEmpty) {
-                  return const Center(child: Text('Masukkan nama pengguna untuk memulai pencarian.'));
-                }
-                // Jika sudah ada input tapi tidak ada hasil
-                if (snapshot.docs.isEmpty || filteredDocs.isEmpty) {
-                  return const Center(child: Text('Pengguna tidak ditemukan.'));
-                }
+                  // Hasil Pengguna
+                  _SearchSection(
+                    title: 'Pengguna',
+                    icon: Icons.people,
+                    child: _UserSearchResults(query: searchQuery),
+                  ),
 
-                // Jika ada hasil, tampilkan list
-                return ListView.builder(
-                  itemCount: filteredDocs.length,
-                  itemBuilder: (context, index) {
-                    final userDoc = filteredDocs[index];
-                    final userData = userDoc.data() as Map<String, dynamic>;
-
-                    return ListTile(
-                      leading: CircleAvatar(
-                        child: Text(userData['username']?[0].toUpperCase() ?? '?'),
-                      ),
-                      title: Text(userData['username'] ?? ''),
-                      onTap: () {
-                        context.push('/user/${userDoc.id}');
-                      },
-                    );
-                  },
-                );
-              },
-              // Kondisi saat stream sedang menunggu data pertama kali
-              loading: () {
-                // Jika belum ada input, jangan tampilkan apa-apa (atau pesan awal)
-                if (searchQuery.isEmpty) {
-                  return const Center(child: Text('Masukkan nama pengguna untuk memulai pencarian.'));
-                }
-                // Jika sudah ada input, tampilkan loading indicator
-                return const Center(child: CircularProgressIndicator());
-              },
-              // Kondisi jika terjadi error (seperti permission-denied sebelumnya)
-              error: (err, stack) => Center(child: Text('Terjadi kesalahan: $err')),
+                  // Location-based results (jika ada filter lokasi)
+                  if (filter.location?.isNotEmpty == true) ...[
+                    const SizedBox(height: 24),
+                    _SearchSection(
+                      title: 'Barang di sekitar ${filter.location}',
+                      icon: Icons.location_on,
+                      child: _LocationSearchResults(location: filter.location!),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          )
+          ),
         ],
       ),
     );
   }
 }
 
+// Widget untuk section hasil pencarian
+class _SearchSection extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  const _SearchSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 18, color: Colors.grey[600]),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
+    );
+  }
+}
+
+// Widget untuk hasil pencarian post (diperbaiki)
+class _PostSearchResults extends ConsumerWidget {
+  final String query;
+
+  const _PostSearchResults({required this.query});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final postsAsync = ref.watch(postSearchProvider(query));
+
+    return postsAsync.when(
+      data: (posts) {
+        if (posts.isEmpty) {
+          return const Text('Tidak ada barang ditemukan.');
+        }
+
+        // ✅ Tampilkan maksimal 3 untuk preview, tapi bisa scroll
+        final displayPosts = posts.take(3).toList();
+        final hasMore = posts.length > 3;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: 120,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: displayPosts.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final post = displayPosts[index];
+                  return _PostCard(post: post);
+                },
+              ),
+            ),
+            if (hasMore) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  // TODO: Navigate ke halaman hasil lengkap atau expand view
+                  _showAllPostsDialog(context, posts);
+                },
+                child: Text('Lihat semua ${posts.length} hasil'),
+              ),
+            ],
+          ],
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, _) => Text('Error: $err'),
+    );
+  }
+
+  void _showAllPostsDialog(BuildContext context, List<Post> posts) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.8,
+          width: MediaQuery.of(context).size.width * 0.9,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Semua Hasil Barang (${posts.length})',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.8,
+                  ),
+                  itemCount: posts.length,
+                  itemBuilder: (context, index) {
+                    final post = posts[index];
+                    return _PostCardLarge(post: post);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Widget card untuk post yang lebih besar
+class _PostCardLarge extends StatelessWidget {
+  final Post post;
+
+  const _PostCardLarge({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final img = post.imageUrls.isNotEmpty ? post.imageUrls.first : null;
+
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).pop(); // Close dialog
+        context.push('/post-detail/${post.id}');
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 3, offset: Offset(0, 1))
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            Expanded(
+              flex: 3,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                child: img != null
+                    ? Image.network(
+                  img,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey.shade200,
+                      child: const Icon(Icons.image_not_supported)
+                  ),
+                )
+                    : Container(
+                  color: Colors.grey.shade200,
+                  width: double.infinity,
+                  child: const Icon(Icons.image, color: Colors.grey),
+                ),
+              ),
+            ),
+            // Info
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      post.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 4),
+                    if (post.price != null)
+                      Text(
+                        'Rp ${post.price!.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    if (post.location != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        post.location!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+// Widget untuk hasil pencarian user
+class _UserSearchResults extends ConsumerWidget {
+  final String query;
+
+  const _UserSearchResults({required this.query});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final usersAsync = ref.watch(filteredUserSearchProvider(query));
+
+    return usersAsync.when(
+      data: (users) {
+        if (users.isEmpty) {
+          return const Text('Tidak ada pengguna ditemukan.');
+        }
+
+        return Column(
+          children: users.map((userData) {
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: CircleAvatar(
+                backgroundImage: userData['profilePicture'] != null
+                    ? NetworkImage(userData['profilePicture'])
+                    : null,
+                child: userData['profilePicture'] == null
+                    ? Text(userData['username']?[0].toUpperCase() ?? '?')
+                    : null,
+              ),
+              title: Row(
+                children: [
+                  Text(userData['username'] ?? ''),
+                  if (userData['isVerified'] == true) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.verified, color: Colors.blue, size: 16),
+                  ],
+                ],
+              ),
+              subtitle: userData['fullName'] != null
+                  ? Text(userData['fullName'])
+                  : null,
+              onTap: () {
+                context.push('/user/${userData['id']}');
+              },
+            );
+          }).toList(),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, _) => Text('Error: $err'),
+    );
+  }
+}
+
+// Widget untuk hasil pencarian berdasarkan lokasi
+class _LocationSearchResults extends ConsumerWidget {
+  final String location;
+
+  const _LocationSearchResults({required this.location});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final postsAsync = ref.watch(locationBasedPostSearchProvider(location));
+
+    return postsAsync.when(
+      data: (posts) {
+        if (posts.isEmpty) {
+          return const Text('Tidak ada barang ditemukan di sekitar lokasi tersebut.');
+        }
+
+        return SizedBox(
+          height: 120,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: posts.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              return _PostCard(post: post);
+            },
+          ),
+        );
+      },
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (err, _) => Text('Error: $err'),
+    );
+  }
+}
+
+// Widget card untuk post
+class _PostCard extends StatelessWidget {
+  final Post post;
+
+  const _PostCard({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final img = post.imageUrls.isNotEmpty ? post.imageUrls.first : null;
+
+    return InkWell(
+      onTap: () => context.push('/post-detail/${post.id}'),
+      child: Container(
+        width: 100,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border.all(color: Colors.grey.shade200),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: const [
+            BoxShadow(color: Colors.black12, blurRadius: 3, offset: Offset(0, 1))
+          ],
+        ),
+        child: Column(
+          children: [
+            // Image
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                child: img != null
+                    ? Image.network(
+                  img,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  errorBuilder: (_, __, ___) => Container(
+                      color: Colors.grey.shade200,
+                      child: const Icon(Icons.image_not_supported)
+                  ),
+                )
+                    : Container(
+                  color: Colors.grey.shade200,
+                  child: const Icon(Icons.image, color: Colors.grey),
+                ),
+              ),
+            ),
+            // Info
+            Padding(
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                  ),
+                  if (post.price != null)
+                    Text(
+                      'Rp ${post.price!.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Suggested Ads Strip (tetap sama seperti sebelumnya)
 class _SuggestedAdsStrip extends ConsumerWidget {
   const _SuggestedAdsStrip();
 
@@ -122,7 +566,6 @@ class _SuggestedAdsStrip extends ConsumerWidget {
       child: adsAsync.when(
         data: (posts) {
           if (posts.isEmpty) {
-            // Jika tidak ada ads, tampilkan strip kosong agar UI tetap ringan
             return const SizedBox.shrink();
           }
           return ListView.separated(

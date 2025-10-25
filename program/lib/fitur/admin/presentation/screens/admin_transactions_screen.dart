@@ -6,6 +6,11 @@ import 'package:program/app/providers/firebase_providers.dart';
 import 'package:program/fitur/jualbeli/domain/entities/transaction_entity.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/return_request_provider.dart';
 import 'package:program/fitur/jualbeli/presentation/providers/transaction_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+
+import '../providers/transactionpdfgenerator.dart';
 
 // Stream semua transaksi untuk admin (urut tanggal desc)
 final adminAllTransactionsProvider = StreamProvider.autoDispose<List<Transaction>>((ref) {
@@ -51,56 +56,331 @@ final adminUserNameProvider = FutureProvider.family<String?, String>((ref, userI
   return data?['username'] as String?;
 });
 
-class AdminTransactionsScreen extends ConsumerWidget {
+class AdminTransactionsScreen extends ConsumerStatefulWidget {
   const AdminTransactionsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return DefaultTabController(
-      length: 7,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Admin • Transaksi'),
-          bottom: const TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(text: 'Semua'),
-              Tab(text: 'Diproses'),
-              Tab(text: 'Dikirim'),
-              Tab(text: 'Diterima'),
-              Tab(text: 'Selesai'),
-              Tab(text: 'Dibatalkan'),
-              Tab(text: 'Retur'),
-            ],
+  ConsumerState<AdminTransactionsScreen> createState() => _AdminTransactionsScreenState();
+}
+
+class _AdminTransactionsScreenState extends ConsumerState<AdminTransactionsScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _isGeneratingPdf = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 7, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Admin • Transaksi'),
+        actions: [
+          IconButton(
+            icon: _isGeneratingPdf
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+                : const Icon(Icons.picture_as_pdf),
+            onPressed: _isGeneratingPdf ? null : _generatePdfReport,
+            tooltip: 'Generate Laporan PDF',
           ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildList(ref, filter: (t) => true, empty: 'Belum ada transaksi.'),
-            _buildList(ref, filter: (t) => t.status == TransactionStatus.pending || t.status == TransactionStatus.paid, empty: 'Tidak ada transaksi diproses.'),
-            _buildList(ref, filter: (t) => t.status == TransactionStatus.shipped, empty: 'Tidak ada transaksi dikirim.'),
-            _buildList(ref, filter: (t) => t.status == TransactionStatus.delivered, empty: 'Tidak ada transaksi diterima.'),
-            _buildList(ref, filter: (t) => t.status == TransactionStatus.completed, empty: 'Tidak ada transaksi selesai.'),
-            _buildList(ref, filter: (t) => t.status == TransactionStatus.refunded, empty: 'Tidak ada transaksi dibatalkan.'),
-            // Khusus Retur (retur aktif pada transaksi apapun)
-            _buildList(
-              ref,
-              filter: (_) => true, // ambil semua lalu tandai yang retur aktif
-              empty: 'Tidak ada transaksi dalam proses retur.',
-              onlyReturnActive: true,
-            ),
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabs: const [
+            Tab(text: 'Semua'),
+            Tab(text: 'Diproses'),
+            Tab(text: 'Dikirim'),
+            Tab(text: 'Diterima'),
+            Tab(text: 'Selesai'),
+            Tab(text: 'Dibatalkan'),
+            Tab(text: 'Retur'),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildList(filter: (t) => true, empty: 'Belum ada transaksi.'),
+          _buildList(filter: (t) => t.status == TransactionStatus.pending || t.status == TransactionStatus.paid, empty: 'Tidak ada transaksi diproses.'),
+          _buildList(filter: (t) => t.status == TransactionStatus.shipped, empty: 'Tidak ada transaksi dikirim.'),
+          _buildList(filter: (t) => t.status == TransactionStatus.delivered, empty: 'Tidak ada transaksi diterima.'),
+          _buildList(filter: (t) => t.status == TransactionStatus.completed, empty: 'Tidak ada transaksi selesai.'),
+          _buildList(filter: (t) => t.status == TransactionStatus.refunded, empty: 'Tidak ada transaksi dibatalkan.'),
+          _buildList(
+            filter: (_) => true,
+            empty: 'Tidak ada transaksi dalam proses retur.',
+            onlyReturnActive: true,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildList(
-      WidgetRef ref, {
-        required bool Function(Transaction) filter,
-        required String empty,
-        bool onlyReturnActive = false,
-      }) {
+  Future<void> _generatePdfReport() async {
+    setState(() => _isGeneratingPdf = true);
+
+    try {
+      final txAsync = ref.read(adminAllTransactionsProvider);
+
+      await txAsync.when(
+        data: (allTransactions) async {
+          if (allTransactions.isEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Tidak ada transaksi untuk digenerate')),
+              );
+            }
+            return;
+          }
+
+          // Filter berdasarkan tab aktif
+          final currentTab = _tabController.index;
+          List<Transaction> filteredTransactions;
+          String? filterTitle;
+
+          switch (currentTab) {
+            case 0: // Semua
+              filteredTransactions = allTransactions;
+              filterTitle = 'Filter: Semua Transaksi';
+              break;
+            case 1: // Diproses
+              filteredTransactions = allTransactions.where((t) =>
+              t.status == TransactionStatus.pending ||
+                  t.status == TransactionStatus.paid).toList();
+              filterTitle = 'Filter: Transaksi Diproses';
+              break;
+            case 2: // Dikirim
+              filteredTransactions = allTransactions.where((t) =>
+              t.status == TransactionStatus.shipped).toList();
+              filterTitle = 'Filter: Transaksi Dikirim';
+              break;
+            case 3: // Diterima
+              filteredTransactions = allTransactions.where((t) =>
+              t.status == TransactionStatus.delivered).toList();
+              filterTitle = 'Filter: Transaksi Diterima';
+              break;
+            case 4: // Selesai
+              filteredTransactions = allTransactions.where((t) =>
+              t.status == TransactionStatus.completed).toList();
+              filterTitle = 'Filter: Transaksi Selesai';
+              break;
+            case 5: // Dibatalkan
+              filteredTransactions = allTransactions.where((t) =>
+              t.status == TransactionStatus.refunded).toList();
+              filterTitle = 'Filter: Transaksi Dibatalkan';
+              break;
+            case 6: // Retur
+              filteredTransactions = allTransactions;
+              filterTitle = 'Filter: Transaksi Dalam Proses Retur';
+              break;
+            default:
+              filteredTransactions = allTransactions;
+              filterTitle = null;
+          }
+
+          if (filteredTransactions.isEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Tidak ada transaksi di tab ini')),
+              );
+            }
+            return;
+          }
+
+          // Fetch semua username
+          final buyerNames = <String, String?>{};
+          final sellerNames = <String, String?>{};
+          final hasActiveReturns = <String, bool>{};
+
+          for (final tx in filteredTransactions) {
+            // Get buyer name
+            if (!buyerNames.containsKey(tx.buyerId)) {
+              final buyerNameAsync = await ref.read(adminUserNameProvider(tx.buyerId).future);
+              buyerNames[tx.buyerId] = buyerNameAsync;
+            }
+
+            // Get seller name
+            if (!sellerNames.containsKey(tx.sellerId)) {
+              final sellerNameAsync = await ref.read(adminUserNameProvider(tx.sellerId).future);
+              sellerNames[tx.sellerId] = sellerNameAsync;
+            }
+
+            // Check active return
+            final returnsAsync = await ref.read(
+              returnRequestsByTransactionIdStreamProvider(tx.id).future,
+            );
+            hasActiveReturns[tx.id] = returnsAsync.any((r) =>
+            r.status.name == 'pending' ||
+                r.status.name == 'approved' ||
+                r.status.name == 'awaitingSellerResponse' ||
+                r.status.name == 'sellerResponded');
+          }
+
+          // Filter untuk tab retur (hanya yang ada retur aktif)
+          if (currentTab == 6) {
+            filteredTransactions = filteredTransactions.where((tx) =>
+            hasActiveReturns[tx.id] == true).toList();
+          }
+
+          if (filteredTransactions.isEmpty) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Tidak ada transaksi dengan retur aktif')),
+              );
+            }
+            return;
+          }
+
+          // Generate PDF
+          final pdfFile = await TransactionPdfGenerator.generateTransactionReport(
+            transactions: filteredTransactions,
+            buyerNames: buyerNames,
+            sellerNames: sellerNames,
+            hasActiveReturns: hasActiveReturns,
+            filterTitle: filterTitle,
+          );
+
+          if (mounted) {
+            // Show PDF Preview with download button
+            final pdfBytes = await pdfFile.readAsBytes();
+            final fileName = pdfFile.path.split('/').last;
+
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => Scaffold(
+                  appBar: AppBar(
+                    title: const Text('Preview Laporan PDF'),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.download),
+                        tooltip: 'Download PDF',
+                        onPressed: () async {
+                          try {
+                            Directory? directory;
+
+                            // Get directory based on platform
+                            if (Platform.isAndroid) {
+                              // For Android, try to get Downloads directory
+                              directory = Directory('/storage/emulated/0/Download');
+                              if (!await directory.exists()) {
+                                directory = Directory('/storage/emulated/0/Downloads');
+                              }
+                              if (!await directory.exists()) {
+                                directory = await getExternalStorageDirectory();
+                              }
+                            } else if (Platform.isIOS) {
+                              directory = await getApplicationDocumentsDirectory();
+                            } else {
+                              directory = await getDownloadsDirectory();
+                            }
+
+                            if (directory == null) {
+                              throw Exception('Tidak dapat mengakses folder download');
+                            }
+
+                            // Create file path
+                            final filePath = '${directory.path}/$fileName';
+                            final file = File(filePath);
+
+                            // Write PDF to file
+                            await file.writeAsBytes(pdfBytes);
+
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('PDF berhasil didownload!\nLokasi: ${directory.path}'),
+                                  backgroundColor: Colors.green,
+                                  duration: const Duration(seconds: 4),
+                                  action: SnackBarAction(
+                                    label: 'OK',
+                                    textColor: Colors.white,
+                                    onPressed: () {},
+                                  ),
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Gagal download: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  body: PdfPreview(
+                    build: (format) => pdfBytes,
+                    allowSharing: false,
+                    allowPrinting: true,
+                    canChangePageFormat: false,
+                    canChangeOrientation: false,
+                    canDebug: false,
+                  ),
+                ),
+              ),
+            );
+          }
+        },
+        loading: () {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Memuat data transaksi...')),
+            );
+          }
+        },
+        error: (error, stack) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Error: $error')),
+            );
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal generate PDF: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isGeneratingPdf = false);
+      }
+    }
+  }
+
+  Widget _buildList({
+    required bool Function(Transaction) filter,
+    required String empty,
+    bool onlyReturnActive = false,
+  }) {
     final txAsync = ref.watch(adminAllTransactionsProvider);
     return txAsync.when(
       data: (all) {
@@ -400,4 +680,3 @@ class _AdminTransactionCard extends ConsumerWidget {
     );
   }
 }
-

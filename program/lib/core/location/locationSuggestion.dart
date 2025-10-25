@@ -3,8 +3,8 @@ class LocationSuggestion {
   final String country;
   final double lat;
   final double lng;
-  final String? adminName1; // Nama provinsi
-  final String? adminName2; // Nama kabupaten/kota
+  final String? adminName1;
+  final String? adminName2;
 
   LocationSuggestion({
     required this.name,
