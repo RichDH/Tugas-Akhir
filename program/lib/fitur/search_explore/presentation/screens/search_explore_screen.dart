@@ -191,7 +191,6 @@ class _SearchSection extends StatelessWidget {
   }
 }
 
-// Widget untuk hasil pencarian post (diperbaiki)
 class _PostSearchResults extends ConsumerWidget {
   final String query;
 
@@ -199,7 +198,7 @@ class _PostSearchResults extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final postsAsync = ref.watch(postSearchProvider(query));
+    final postsAsync = ref.watch(postSearchProvider);
 
     return postsAsync.when(
       data: (posts) {
@@ -207,7 +206,7 @@ class _PostSearchResults extends ConsumerWidget {
           return const Text('Tidak ada barang ditemukan.');
         }
 
-        // ✅ Tampilkan maksimal 3 untuk preview, tapi bisa scroll
+        // Tampilkan maksimal 3 untuk preview
         final displayPosts = posts.take(3).toList();
         final hasMore = posts.length > 3;
 
@@ -230,7 +229,6 @@ class _PostSearchResults extends ConsumerWidget {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () {
-                  // TODO: Navigate ke halaman hasil lengkap atau expand view
                   _showAllPostsDialog(context, posts);
                 },
                 child: Text('Lihat semua ${posts.length} hasil'),
@@ -553,7 +551,6 @@ class _PostCard extends StatelessWidget {
   }
 }
 
-// Suggested Ads Strip (tetap sama seperti sebelumnya)
 class _SuggestedAdsStrip extends ConsumerWidget {
   const _SuggestedAdsStrip();
 
@@ -562,11 +559,21 @@ class _SuggestedAdsStrip extends ConsumerWidget {
     final adsAsync = ref.watch(suggestedAdsProvider);
 
     return SizedBox(
-      height: 120,
+      height: 110,
       child: adsAsync.when(
         data: (posts) {
           if (posts.isEmpty) {
-            return const SizedBox.shrink();
+            // ✅ Tampilkan "No suggestions" ketika kosong
+            return Center(
+              child: Text(
+                'No suggestions',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade500,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            );
           }
           return ListView.separated(
             scrollDirection: Axis.horizontal,
@@ -579,8 +586,23 @@ class _SuggestedAdsStrip extends ConsumerWidget {
             },
           );
         },
-        loading: () => const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
-        error: (e, s) => const SizedBox.shrink(),
+        loading: () => const Center(
+            child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2)
+            )
+        ),
+        error: (e, s) => Center(
+          child: Text(
+            'No suggestions',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade500,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
       ),
     );
   }

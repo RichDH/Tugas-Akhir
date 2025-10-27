@@ -82,66 +82,104 @@ final suggestedAdsProvider = StreamProvider.autoDispose<List<Post>>((ref) {
 
 final searchFilterProvider = StateProvider.autoDispose<SearchFilter>((ref) => const SearchFilter());
 
-// Provider untuk post search dengan filter
-final postSearchProvider = StreamProvider.autoDispose.family<List<Post>, String>((ref, query) {
+final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
+  final query = ref.watch(searchQueryProvider);
   final filter = ref.watch(searchFilterProvider);
 
   if (query.isEmpty) {
     return Stream.empty();
   }
 
-  // Base query untuk posts
-  Query postQuery = firestore
+  print('🔍 Searching posts with query: "$query"');
+  print('🔧 Active filter: $filter');
+
+  return firestore
       .collection('posts')
-      .where('deleted', isEqualTo: false);
+      .where('deleted', isEqualTo: false)
+      .orderBy('updatedAt', descending: true)
+      .limit(100) // Ambil lebih banyak untuk filtering
+      .snapshots()
+      .map((snapshot) {
 
-  // Filter berdasarkan title atau description yang mengandung query
-  // Karena Firestore tidak support full-text search, kita gunakan array-contains-any
-  // atau filter di client side
+    print('📦 Total posts from Firestore: ${snapshot.docs.length}');
 
-  return postQuery.snapshots().map((snapshot) {
-    List<Post> posts = snapshot.docs
-        .map((doc) => Post.fromFirestore(doc))
-        .where((post) {
-      // Filter berdasarkan query text
-      final titleMatch = post.title.toLowerCase().contains(query.toLowerCase());
-      final descMatch = post.description?.toLowerCase().contains(query.toLowerCase()) ?? false;
-      final brandMatch = post.brand?.toLowerCase().contains(query.toLowerCase()) ?? false;
+    List<Post> posts = [];
 
-      if (!titleMatch && !descMatch && !brandMatch) return false;
+    for (final doc in snapshot.docs) {
+      try {
+        final post = Post.fromFirestore(doc);
 
-      // Apply filters
-      if (filter.brand?.isNotEmpty == true) {
-        if (post.brand?.toLowerCase() != filter.brand!.toLowerCase()) return false;
+        // ✅ Filter berdasarkan title yang mengandung query
+        final queryLower = query.toLowerCase().trim();
+        final titleLower = post.title.toLowerCase();
+
+        if (!titleLower.contains(queryLower)) {
+          continue;
+        }
+
+        // ✅ Apply filters
+        bool passFilter = true;
+
+        // Filter brand
+        if (filter.brand?.isNotEmpty == true && passFilter) {
+          final postBrand = post.brand?.toLowerCase() ?? '';
+          final filterBrand = filter.brand!.toLowerCase();
+          if (postBrand != filterBrand) {
+            passFilter = false;
+          }
+        }
+
+        // Filter price range
+        if (filter.minPrice != null && passFilter) {
+          if (post.price == null || post.price! < filter.minPrice!) {
+            passFilter = false;
+          }
+        }
+
+        if (filter.maxPrice != null && passFilter) {
+          if (post.price == null || post.price! > filter.maxPrice!) {
+            passFilter = false;
+          }
+        }
+
+        // Filter category
+        if (filter.category?.isNotEmpty == true && passFilter) {
+          if (post.category != filter.category) {
+            passFilter = false;
+          }
+        }
+
+        // ✅ Filter location (exact match dengan post.location)
+        if (filter.location?.isNotEmpty == true && passFilter) {
+          final postLocation = post.location?.toLowerCase() ?? '';
+          final filterLocation = filter.location!.toLowerCase();
+          if (postLocation != filterLocation) {
+            passFilter = false;
+          }
+        }
+
+        if (passFilter) {
+          posts.add(post);
+        }
+
+      } catch (e) {
+        print('❌ Error parsing post ${doc.id}: $e');
+        continue;
       }
-
-      if (filter.minPrice != null) {
-        if (post.price == null || post.price! < filter.minPrice!) return false;
-      }
-
-      if (filter.maxPrice != null) {
-        if (post.price == null || post.price! > filter.maxPrice!) return false;
-      }
-
-      if (filter.category?.isNotEmpty == true) {
-        if (post.category != filter.category) return false;
-      }
-
-      return true;
-    })
-        .toList();
-
-    // Limit hasil ke 3 item
-    if (posts.length > 3) {
-      posts = posts.sublist(0, 3);
     }
+
+    print('✅ Filtered posts result: ${posts.length}');
+
+    // Sort berdasarkan relevansi
+    posts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     return posts;
   });
 });
 
-// Provider untuk filtered user search
+
+// ✅ Provider untuk filtered user search yang diperbaiki
 final filteredUserSearchProvider = StreamProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, query) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   final filter = ref.watch(searchFilterProvider);
@@ -150,12 +188,14 @@ final filteredUserSearchProvider = StreamProvider.autoDispose.family<List<Map<St
     return Stream.empty();
   }
 
-  Query userQuery = firestore
+  return firestore
       .collection('users')
       .where('username', isGreaterThanOrEqualTo: query)
-      .where('username', isLessThanOrEqualTo: '$query\uf8ff');
+      .where('username', isLessThanOrEqualTo: '$query\uf8ff')
+      .limit(20) // Ambil lebih banyak untuk di-filter
+      .snapshots()
+      .map((snapshot) {
 
-  return userQuery.snapshots().map((snapshot) {
     List<Map<String, dynamic>> users = snapshot.docs
         .where((doc) {
       final data = doc.data() as Map<String, dynamic>;
@@ -176,16 +216,11 @@ final filteredUserSearchProvider = StreamProvider.autoDispose.family<List<Map<St
     })
         .toList();
 
-    // Limit hasil ke 3 item
-    if (users.length > 3) {
-      users = users.sublist(0, 3);
-    }
-
     return users;
   });
 });
 
-// Provider untuk location-based search
+// Provider untuk location-based search (diperbaiki)
 final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<Post>, String>((ref, locationName) async {
   if (locationName.isEmpty) return [];
 
@@ -199,34 +234,42 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
     final targetLocation = locations.first;
     const radiusKm = 50.0;
 
-    // Query semua posts yang memiliki koordinat
+    // ✅ Query posts dengan koordinat yang valid
     final snapshot = await firestore
         .collection('posts')
-        .where('deleted', isEqualTo: false)
-        .where('locationLat', isNotEqualTo: null)
-        .where('locationLng', isNotEqualTo: null)
+        .where('deleted', whereIn: [false, null])
         .get();
 
     List<Post> nearbyPosts = [];
 
     for (final doc in snapshot.docs) {
-      final post = Post.fromFirestore(doc);
+      try {
+        final post = Post.fromFirestore(doc);
 
-      if (post.locationLat != null && post.locationLng != null) {
-        final distance = _calculateDistance(
-          targetLocation.lat,
-          targetLocation.lng,
-          post.locationLat!,
-          post.locationLng!,
-        );
+        // Check jika ada koordinat dan valid
+        if (post.locationLat != null &&
+            post.locationLng != null &&
+            post.locationLat != 0 &&
+            post.locationLng != 0) {
 
-        if (distance <= radiusKm) {
-          nearbyPosts.add(post);
+          final distance = _calculateDistance(
+            targetLocation.lat,
+            targetLocation.lng,
+            post.locationLat!,
+            post.locationLng!,
+          );
+
+          if (distance <= radiusKm) {
+            nearbyPosts.add(post);
+          }
         }
+      } catch (e) {
+        print('Error parsing post ${doc.id} for location search: $e');
+        continue;
       }
     }
 
-    // Sort by distance and limit to 3
+    // Sort by distance
     nearbyPosts.sort((a, b) {
       final distanceA = _calculateDistance(
         targetLocation.lat, targetLocation.lng,
@@ -239,7 +282,7 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
       return distanceA.compareTo(distanceB);
     });
 
-    return nearbyPosts.take(3).toList();
+    return nearbyPosts;
   } catch (e) {
     print('Error in location-based search: $e');
     return [];
