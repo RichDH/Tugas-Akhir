@@ -7,7 +7,9 @@
     "shell": "firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "export": "node export-firestore.js",
+    "export-posts": "node -e \"require('./export-firestore.js').exportSpecific(['posts'])\""
   },
   "engines": {
     "node": "22"

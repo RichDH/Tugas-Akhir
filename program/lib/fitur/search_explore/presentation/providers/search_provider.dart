@@ -42,7 +42,6 @@ final suggestedAdsProvider = StreamProvider.autoDispose<List<Post>>((ref) {
 
     final adsPosts = snap.docs.where((doc) {
       final m = doc.data();
-      // Filter deleted (support post lama)
       final isDeleted = (m['deleted'] == true);
       if (isDeleted) return false;
 
@@ -82,23 +81,21 @@ final suggestedAdsProvider = StreamProvider.autoDispose<List<Post>>((ref) {
 
 final searchFilterProvider = StateProvider.autoDispose<SearchFilter>((ref) => const SearchFilter());
 
+// ✅ PERBAIKAN: postSearchProvider yang kompatibel dengan post lama
 final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   final query = ref.watch(searchQueryProvider);
   final filter = ref.watch(searchFilterProvider);
 
-  if (query.isEmpty) {
-    return Stream.empty();
-  }
-
   print('🔍 Searching posts with query: "$query"');
   print('🔧 Active filter: $filter');
 
+  // ✅ PERUBAHAN: Query yang lebih sederhana tanpa where clause untuk deleted
+  // dan gunakan createdAt untuk orderBy
   return firestore
       .collection('posts')
-      .where('deleted', isEqualTo: false)
-      .orderBy('updatedAt', descending: true)
-      .limit(100) // Ambil lebih banyak untuk filtering
+      .orderBy('createdAt', descending: true) // ✅ Ganti dari updatedAt ke createdAt
+      .limit(200) // ✅ Ambil lebih banyak karena akan ada filtering manual
       .snapshots()
       .map((snapshot) {
 
@@ -110,57 +107,86 @@ final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
       try {
         final post = Post.fromFirestore(doc);
 
-        // ✅ Filter berdasarkan title yang mengandung query
-        final queryLower = query.toLowerCase().trim();
-        final titleLower = post.title.toLowerCase();
-
-        if (!titleLower.contains(queryLower)) {
-          continue;
+        // ✅ PERUBAHAN: Manual filtering untuk deleted - include post tanpa field deleted
+        final isDeleted = post.deleted; // Post.fromFirestore sudah handle default false
+        if (isDeleted) {
+          print('🗑️ Skipping deleted post: ${post.title}');
+          continue; // Skip post yang deleted = true
         }
 
-        // ✅ Apply filters
         bool passFilter = true;
 
-        // Filter brand
-        if (filter.brand?.isNotEmpty == true && passFilter) {
-          final postBrand = post.brand?.toLowerCase() ?? '';
-          final filterBrand = filter.brand!.toLowerCase();
-          if (postBrand != filterBrand) {
+        // ✅ Search keyword - lebih fleksibel
+        if (query.isNotEmpty) {
+          final queryLower = query.toLowerCase().trim();
+          final titleLower = post.title.toLowerCase();
+          final descLower = post.description?.toLowerCase() ?? '';
+          final brandLower = post.brand?.toLowerCase() ?? '';
+          final categoryLower = post.category?.toLowerCase() ?? '';
+
+          // Cek apakah keyword ada di title, description, brand, atau category
+          final matchesKeyword = titleLower.contains(queryLower) ||
+              descLower.contains(queryLower) ||
+              brandLower.contains(queryLower) ||
+              categoryLower.contains(queryLower);
+
+          if (!matchesKeyword) {
             passFilter = false;
+            print('❌ Post "${post.title}" tidak cocok dengan keyword "$query"');
+          } else {
+            print('✅ Post "${post.title}" cocok dengan keyword "$query"');
           }
         }
 
-        // Filter price range
-        if (filter.minPrice != null && passFilter) {
-          if (post.price == null || post.price! < filter.minPrice!) {
-            passFilter = false;
+        // ✅ Apply filters hanya jika masih pass
+        if (passFilter) {
+          // Filter brand - gunakan contains, bukan exact match
+          if (filter.brand?.isNotEmpty == true && passFilter) {
+            final postBrand = post.brand?.toLowerCase() ?? '';
+            final filterBrand = filter.brand!.toLowerCase();
+            if (!postBrand.contains(filterBrand)) {
+              passFilter = false;
+              print('❌ Brand filter: "${post.brand}" tidak mengandung "${filter.brand}"');
+            }
           }
-        }
 
-        if (filter.maxPrice != null && passFilter) {
-          if (post.price == null || post.price! > filter.maxPrice!) {
-            passFilter = false;
+          // Filter price range
+          if (filter.minPrice != null && passFilter) {
+            if (post.price == null || post.price! < filter.minPrice!) {
+              passFilter = false;
+              print('❌ Price filter: ${post.price} kurang dari ${filter.minPrice}');
+            }
           }
-        }
 
-        // Filter category
-        if (filter.category?.isNotEmpty == true && passFilter) {
-          if (post.category != filter.category) {
-            passFilter = false;
+          if (filter.maxPrice != null && passFilter) {
+            if (post.price == null || post.price! > filter.maxPrice!) {
+              passFilter = false;
+              print('❌ Price filter: ${post.price} lebih dari ${filter.maxPrice}');
+            }
           }
-        }
 
-        // ✅ Filter location (exact match dengan post.location)
-        if (filter.location?.isNotEmpty == true && passFilter) {
-          final postLocation = post.location?.toLowerCase() ?? '';
-          final filterLocation = filter.location!.toLowerCase();
-          if (postLocation != filterLocation) {
-            passFilter = false;
+          // Filter category - exact match untuk kategori
+          if (filter.category?.isNotEmpty == true && passFilter) {
+            if (post.category != filter.category) {
+              passFilter = false;
+              print('❌ Category filter: "${post.category}" != "${filter.category}"');
+            }
+          }
+
+          // ✅ Filter location - gunakan contains untuk lebih fleksibel
+          if (filter.location?.isNotEmpty == true && passFilter) {
+            final postLocation = post.location?.toLowerCase() ?? '';
+            final filterLocation = filter.location!.toLowerCase();
+            if (!postLocation.contains(filterLocation)) {
+              passFilter = false;
+              print('❌ Location filter: "${post.location}" tidak mengandung "${filter.location}"');
+            }
           }
         }
 
         if (passFilter) {
           posts.add(post);
+          print('✅ Post "${post.title}" lolos semua filter');
         }
 
       } catch (e) {
@@ -171,8 +197,23 @@ final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
 
     print('✅ Filtered posts result: ${posts.length}');
 
-    // Sort berdasarkan relevansi
-    posts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    // Sort berdasarkan relevansi - posts yang cocok dengan keyword di title diprioritaskan
+    if (query.isNotEmpty) {
+      final queryLower = query.toLowerCase().trim();
+      posts.sort((a, b) {
+        final aTitleMatch = a.title.toLowerCase().contains(queryLower);
+        final bTitleMatch = b.title.toLowerCase().contains(queryLower);
+
+        if (aTitleMatch && !bTitleMatch) return -1;
+        if (!aTitleMatch && bTitleMatch) return 1;
+
+        // Jika sama-sama cocok atau tidak cocok, sort by created date
+        return b.createdAt.compareTo(a.createdAt);
+      });
+    } else {
+      // Jika tidak ada query, sort by created date
+      posts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
 
     return posts;
   });
@@ -220,7 +261,6 @@ final filteredUserSearchProvider = StreamProvider.autoDispose.family<List<Map<St
   });
 });
 
-// Provider untuk location-based search (diperbaiki)
 final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<Post>, String>((ref, locationName) async {
   if (locationName.isEmpty) return [];
 
@@ -234,10 +274,11 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
     final targetLocation = locations.first;
     const radiusKm = 50.0;
 
-    // ✅ Query posts dengan koordinat yang valid
+    // ✅ PERUBAHAN: Query tanpa where clause untuk deleted
     final snapshot = await firestore
         .collection('posts')
-        .where('deleted', whereIn: [false, null])
+        .orderBy('createdAt', descending: true) // ✅ Ganti ke createdAt
+        .limit(200) // Ambil lebih banyak untuk filtering manual
         .get();
 
     List<Post> nearbyPosts = [];
@@ -245,6 +286,9 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
     for (final doc in snapshot.docs) {
       try {
         final post = Post.fromFirestore(doc);
+
+        // ✅ Manual filter deleted
+        if (post.deleted) continue;
 
         // Check jika ada koordinat dan valid
         if (post.locationLat != null &&
@@ -288,6 +332,7 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
     return [];
   }
 });
+
 
 // Fungsi untuk menghitung jarak antara dua koordinat (Haversine formula)
 double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {

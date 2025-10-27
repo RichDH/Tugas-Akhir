@@ -46,7 +46,7 @@ class ProfileScreen extends ConsumerWidget {
       }).length;
     }
 
-    final totalPostsCount = _safeCount(userPostsAsync) + _safeCount(userRequestsAsync);
+    final totalPostsCount = _safeCount(userPostsAsync) + _safeCount(userRequestsAsync) + _safeCount(userShortsAsync);
 
 
     return Scaffold(

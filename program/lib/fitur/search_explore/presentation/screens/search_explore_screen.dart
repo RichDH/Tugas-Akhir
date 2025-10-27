@@ -202,8 +202,27 @@ class _PostSearchResults extends ConsumerWidget {
 
     return postsAsync.when(
       data: (posts) {
-        if (posts.isEmpty) {
-          return const Text('Tidak ada barang ditemukan.');
+        // ✅ PERUBAHAN: Berikan feedback yang lebih informatif
+        if (posts.isEmpty && query.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Tidak ada barang ditemukan untuk "$query".'),
+              const SizedBox(height: 8),
+              Text(
+                'Tips: Coba gunakan kata kunci yang lebih umum atau periksa filter yang aktif.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (posts.isEmpty && query.isEmpty) {
+          return const Text('Masukkan kata kunci untuk mencari barang.');
         }
 
         // Tampilkan maksimal 3 untuk preview
@@ -213,6 +232,20 @@ class _PostSearchResults extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ✅ Tampilkan info jumlah hasil
+            if (query.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Ditemukan ${posts.length} hasil untuk "$query"',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+
             SizedBox(
               height: 120,
               child: ListView.separated(
@@ -238,7 +271,20 @@ class _PostSearchResults extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (err, _) => Text('Error: $err'),
+      error: (err, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Error: $err'),
+          const SizedBox(height: 8),
+          Text(
+            'Terjadi kesalahan saat mencari. Silakan coba lagi.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
