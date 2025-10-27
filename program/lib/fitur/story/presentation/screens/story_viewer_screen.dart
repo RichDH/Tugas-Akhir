@@ -443,14 +443,14 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                             Text(
                               currentStory.username,
                               style: const TextStyle(
-                                color: Colors.white,
+                                color: Colors.purple,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                             Text(
                               _formatTime(currentStory.createdAt),
                               style: const TextStyle(
-                                color: Colors.white70,
+                                color: Colors.purple,
                                 fontSize: 12,
                               ),
                             ),
@@ -461,7 +461,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                       Text(
                         '${_currentIndex + 1}/${_allStories.length}',
                         style: const TextStyle(
-                          color: Colors.white70,
+                          color: Colors.purple,
                           fontSize: 12,
                         ),
                       ),
@@ -470,7 +470,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
                         onPressed: _closeViewer,
                         icon: const Icon(
                           Icons.close,
-                          color: Colors.white,
+                          color: Colors.purple,
                         ),
                       ),
                     ],
@@ -484,7 +484,7 @@ class _StoryViewerScreenState extends ConsumerState<StoryViewerScreen> {
               const Center(
                 child: Icon(
                   Icons.pause_circle_filled,
-                  color: Colors.white70,
+                  color: Colors.purple,
                   size: 80,
                 ),
               ),

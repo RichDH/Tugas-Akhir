@@ -14,6 +14,37 @@ import '../../../admin/application/admin_user_service.dart';
 import '../../../chat/presentation/providers/chat_provider.dart';
 import '../../../post/domain/entities/post.dart';
 
+Future<double?> _fetchAverageRating(String userId) async {
+  try {
+    final fs = FirebaseFirestore.instance;
+    final snap = await fs
+        .collection('transactions')
+        .where('sellerId', isEqualTo: userId)
+        .where('status', isEqualTo: 'completed')
+        .get();
+
+    if (snap.docs.isEmpty) return null;
+
+    final ratings = <double>[];
+    for (final d in snap.docs) {
+      final data = d.data();
+      final r = data['rating'];
+      if (r == null) continue;
+      if (r is num) ratings.add(r.toDouble());
+      if (r is String) {
+        final parsed = double.tryParse(r);
+        if (parsed != null) ratings.add(parsed);
+      }
+    }
+    if (ratings.isEmpty) return null;
+    final sum = ratings.fold<double>(0.0, (a, b) => a + b);
+    return sum / ratings.length;
+  } catch (_) {
+    return null;
+  }
+}
+
+
 class ProfileScreen extends ConsumerWidget {
   final String? userId;
   const ProfileScreen({super.key, this.userId});
@@ -532,7 +563,45 @@ class ProfileScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      // ✅ GANTI: Username dengan verified badge dan rating
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          // Verified badge
+                          if (userData['isVerified'] == true)
+                            const Icon(Icons.verified, color: Colors.blue, size: 18),
+                          // Rating
+                          FutureBuilder<double?>(
+                            future: _fetchAverageRating(targetUserId),
+                            builder: (context, ratingSnap) {
+                              final avgRating = ratingSnap.data;
+                              if (avgRating == null) return const SizedBox.shrink();
+                              return Row(
+                                children: [
+                                  const SizedBox(width: 8),
+                                  const Icon(Icons.star, color: Colors.amber, size: 16),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    avgRating.toStringAsFixed(1),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                       Text('@$username', style: const TextStyle(color: Colors.grey)),
                       if (bio.isNotEmpty) ...[
                         const SizedBox(height: 4),
@@ -541,6 +610,7 @@ class ProfileScreen extends ConsumerWidget {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 10),
                 Consumer(
                   builder: (context, ref, child) {

@@ -125,47 +125,72 @@ class AdminChatListScreen extends ConsumerWidget {
                     builder: (context, unreadSnap) {
                       final hasUnread = unreadSnap.data ?? false;
 
-                      return ListTile(
-                        leading: Stack(
-                          children: [
-                            const CircleAvatar(child: Icon(Icons.person)),
-                            if (hasUnread)
-                              Positioned(
-                                right: 0,
-                                top: 0,
-                                child: Container(
-                                  width: 10,
-                                  height: 10,
-                                  decoration: const BoxDecoration(
-                                    color: Colors.red,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        title: Text(
-                          otherName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          lastMessage,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () {
-                          // Mark as read
-                          FirebaseFirestore.instance
-                              .collection('users').doc(adminId)
-                              .collection('chat_read_status').doc(room.id)
-                              .set({'lastRead': FieldValue.serverTimestamp()},
-                              SetOptions(merge: true));
+                      return StreamBuilder<DocumentSnapshot>(
+                        stream: fs.collection('users').doc(otherId).snapshots(),
+                        builder: (context, liveUserSnap) {
+                          String displayName = otherName;
+                          String? photoUrl;
+                          if (liveUserSnap.hasData && liveUserSnap.data!.exists) {
+                            final m = liveUserSnap.data!.data() as Map<String, dynamic>?;
+                            displayName = m?['username']?.toString() ?? otherName;
+                            photoUrl = m?['profileImageUrl'] as String?;
+                          }
 
-                          context.push('/admin/chats/${room.id}', extra: {'name': otherName});
+                          return ListTile(
+                            leading: Stack(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: Colors.blueGrey,
+                                  backgroundImage: (photoUrl != null && photoUrl!.isNotEmpty)
+                                      ? NetworkImage(photoUrl!)
+                                      : null,
+                                  child: (photoUrl == null || photoUrl!.isEmpty)
+                                      ? Text(
+                                    displayName.isNotEmpty
+                                        ? displayName[0].toUpperCase()
+                                        : '?',
+                                    style: const TextStyle(
+                                        color: Colors.white, fontWeight: FontWeight.bold),
+                                  )
+                                      : null,
+                                ),
+                                if (hasUnread)
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    child: Container(
+                                      width: 10, height: 10,
+                                      decoration: const BoxDecoration(
+                                          color: Colors.red, shape: BoxShape.circle),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            title: Text(
+                              displayName,
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              lastMessage,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () {
+                              FirebaseFirestore.instance
+                                  .collection('users').doc(adminId)
+                                  .collection('chat_read_status').doc(room.id)
+                                  .set({'lastRead': FieldValue.serverTimestamp()},
+                                  SetOptions(merge: true));
+
+                              context.push('/admin/chats/${room.id}', extra: {'name': displayName});
+                            },
+                          );
                         },
                       );
                     },
                   );
+
                 },
               );
             },

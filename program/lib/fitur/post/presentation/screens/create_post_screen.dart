@@ -345,7 +345,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             if (_selectedPostType == PostType.jastip || _selectedPostType == PostType.short)
               TextFormField(
                 controller: _priceController,
-                decoration: const InputDecoration(labelText: 'Harga (Opsional)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Harga', border: OutlineInputBorder()),
                 keyboardType: TextInputType.number,
               ),
 

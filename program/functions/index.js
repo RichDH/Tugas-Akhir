@@ -124,7 +124,7 @@ async function runAutoApproveReturns() {
   console.log('[CRON] Memeriksa retur yang belum direspon...');
   try {
     const now = admin.firestore.Timestamp.now();
-    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 900, now.nanoseconds);
+    const fifteenMinutesAgo = new admin.firestore.Timestamp(now.seconds - 150, now.nanoseconds);
 
     const returnRequests = await admin.firestore()
       .collection('return_requests')

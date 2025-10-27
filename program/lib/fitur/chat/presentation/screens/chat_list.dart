@@ -162,38 +162,66 @@ class ChatListScreen extends ConsumerWidget {
 
                     final otherUsername = snapshot.data ?? 'User tidak dikenal';
 
-                    // ✅ NESTED StreamBuilder untuk unread status
-                    return StreamBuilder<bool>(
-                      stream: _hasUnreadMessagesStream(ref, chatRoom.id, currentUserId!),
-                      builder: (context, unreadSnap) {
-                        final hasUnread = unreadSnap.data ?? false;
+                    return StreamBuilder<DocumentSnapshot>(
+                      stream: ref.read(firebaseFirestoreProvider)
+                          .collection('users')
+                          .doc(otherUserId)
+                          .snapshots(),
+                      builder: (context, userSnap) {
+                        String otherUsernameResolved = otherUsername;
+                        String? profileUrl;
+                        if (userSnap.hasData && userSnap.data!.exists) {
+                          final data = userSnap.data!.data() as Map<String, dynamic>?;
+                          otherUsernameResolved = data?['username']?.toString() ?? otherUsername;
+                          profileUrl = data?['profileImageUrl'] as String?;
+                        }
 
-                        return ListTile(
-                          leading: Stack(
-                            children: [
-                              CircleAvatar(
-                                child: Text(otherUsername.isNotEmpty ? otherUsername[0].toUpperCase() : '?'),
-                              ),
-                              if (hasUnread)
-                                Positioned(
-                                  right: 0,
-                                  top: 0,
-                                  child: Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
+                        return StreamBuilder<bool>(
+                          stream: _hasUnreadMessagesStream(ref, chatRoom.id, currentUserId!),
+                          builder: (context, unreadSnap) {
+                            final hasUnread = unreadSnap.data ?? false;
+
+                            return ListTile(
+                              leading: Stack(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 22,
+                                    backgroundColor: Colors.blueGrey,
+                                    backgroundImage: (profileUrl != null && profileUrl!.isNotEmpty)
+                                        ? NetworkImage(profileUrl!)
+                                        : null,
+                                    child: (profileUrl == null || profileUrl!.isEmpty)
+                                        ? Text(
+                                      otherUsernameResolved.isNotEmpty
+                                          ? otherUsernameResolved[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(
+                                          color: Colors.white, fontWeight: FontWeight.bold),
+                                    )
+                                        : null,
                                   ),
-                                ),
-                            ],
-                          ),
-                          title: Text(otherUsername, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          onTap: () {
-                            _markChatAsRead(ref, chatRoom.id, currentUserId!);
-                            context.push('/chat/$otherUserId', extra: otherUsername);
+                                  if (hasUnread)
+                                    Positioned(
+                                      right: 0,
+                                      top: 0,
+                                      child: Container(
+                                        width: 10, height: 10,
+                                        decoration: const BoxDecoration(
+                                            color: Colors.red, shape: BoxShape.circle),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              title: Text(
+                                otherUsernameResolved,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(lastMessage, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              onTap: () {
+                                _markChatAsRead(ref, chatRoom.id, currentUserId!);
+                                context.push('/chat/$otherUserId', extra: otherUsernameResolved);
+                              },
+                            );
                           },
                         );
                       },

@@ -16,6 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:program/fitur/promo/presentation/providers/admin_promo_provider.dart';
 
 
+
 /// Util untuk optimasi URL Cloudinary
 String _optimizeUrl(String url, {int? width, bool isVideo = false}) {
   try {
@@ -121,9 +122,39 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 25,
-            child: Icon(Icons.person),
+          // ✅ PERBAIKAN: StreamBuilder untuk profile image real-time
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(post.userId)
+                .snapshots(),
+            builder: (context, snapshot) {
+              String? profileImageUrl;
+
+              if (snapshot.hasData && snapshot.data!.exists) {
+                final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                profileImageUrl = userData?['profileImageUrl'] as String?;
+              }
+
+              return CircleAvatar(
+                radius: 25,
+                backgroundColor: Colors.blueGrey,
+                backgroundImage: (profileImageUrl?.isNotEmpty == true)
+                    ? CachedNetworkImageProvider(
+                    _optimizeUrl(profileImageUrl!, width: 100)
+                )
+                    : null,
+                child: (profileImageUrl?.isNotEmpty != true)
+                    ? Text(
+                  post.username.isNotEmpty ? post.username[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white
+                  ),
+                )
+                    : null,
+              );
+            },
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -148,6 +179,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       ),
     );
   }
+
 
   Widget _buildMediaContent(post) {
     if (post.videoUrl != null && post.videoUrl!.isNotEmpty) {
@@ -359,13 +391,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ),
+        // ✅ PERBAIKAN: StreamBuilder untuk comments dengan count real-time
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('posts')
               .doc(post.id)
               .collection('comments')
-              .orderBy('createdAt', descending: true)
-              .limit(5)
+              .orderBy('createdAt', descending: false) // ✅ Ubah ke ascending untuk chronological order
               .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
@@ -384,41 +416,97 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               );
             }
 
-            return ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: comments.length,
-              itemBuilder: (context, index) {
-                final comment = comments[index].data() as Map<String, dynamic>;
-                final username = comment['username'] ?? 'Anonymous';
-
-                return ListTile(
-                  leading: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.blueGrey,
-                    child: Text(
-                      username.isNotEmpty ? username[0].toUpperCase() : 'A',
-                      style: const TextStyle(fontSize: 12, color: Colors.white),
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ✅ Tampilkan info jumlah comment
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Text(
+                    '${comments.length} komentar',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
+                ),
 
-                  // CircleAvatar(backgroundImage: CachedNetworkImageProvider(
-                  //     _optimizeCloudinaryUrl(userProfileUrl, width: 100) // ✅ KECIL untuk avatar
-                  // ))
-                  title: Text(
-                    username,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  subtitle: Text(
-                    comment['text'] ?? '',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  trailing: Text(
-                    _formatTimestamp(comment['createdAt']),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  ),
-                );
-              },
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: comments.length,
+                  itemBuilder: (context, index) {
+                    final commentDoc = comments[index];
+                    final comment = commentDoc.data() as Map<String, dynamic>;
+                    final commentUserId = comment['userId'] as String?;
+                    final username = comment['username'] ?? 'Anonymous';
+
+                    return ListTile(
+                      // ✅ PERBAIKAN: StreamBuilder untuk profile image setiap commenter
+                      leading: commentUserId != null
+                          ? StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(commentUserId)
+                            .snapshots(),
+                        builder: (context, userSnapshot) {
+                          String? profileImageUrl;
+
+                          if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                            profileImageUrl = userData?['profileImageUrl'] as String?;
+                          }
+
+                          return CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.blueGrey,
+                            backgroundImage: (profileImageUrl?.isNotEmpty == true)
+                                ? CachedNetworkImageProvider(
+                                _optimizeUrl(profileImageUrl!, width: 64)
+                            )
+                                : null,
+                            child: (profileImageUrl?.isNotEmpty != true)
+                                ? Text(
+                              username.isNotEmpty ? username[0].toUpperCase() : 'A',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                                : null,
+                          );
+                        },
+                      )
+                          : CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Colors.blueGrey,
+                        child: Text(
+                          username.isNotEmpty ? username[0].toUpperCase() : 'A',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        username,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        comment['text'] ?? '',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      trailing: Text(
+                        _formatTimestamp(comment['createdAt']),
+                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    );
+                  },
+                ),
+              ],
             );
           },
         ),
@@ -427,9 +515,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   }
 
 
+
   Widget _buildBottomActions(post) {
     final postType = _getPostTypeText(post.type);
     final currentUserId = ref.read(firebaseAuthProvider).currentUser?.uid ?? '';
+    final isOwnPost = currentUserId == post.userId;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -445,7 +535,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       ),
       child: Column(
         children: [
-          // Comment input
+          // Comment input - SELALU TAMPIL untuk semua user
           Row(
             children: [
               Expanded(
@@ -469,16 +559,47 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
 
-          if (postType == 'REQUEST' && post.userId != currentUserId)
-            _buildRequestActionButtons(post, currentUserId)
-          else if (postType != 'REQUEST')
-            _buildRegularActionButtons(post),
+          // ✅ PERBAIKAN: Hanya tampilkan action buttons jika BUKAN post sendiri
+          if (!isOwnPost) ...[
+            const SizedBox(height: 12),
+            if (postType == 'REQUEST')
+              _buildRequestActionButtons(post, currentUserId)
+            else
+              _buildRegularActionButtons(post),
+          ] else ...[
+            // ✅ Tampilkan info bahwa ini adalah post sendiri
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Ini adalah postingan Anda',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
 
 // ✅ WIDGET UNTUK REQUEST ACTION BUTTONS
   Widget _buildRequestActionButtons(post, String currentUserId) {
@@ -763,7 +884,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        _buyDirect(post, quantity, bestPromo: null); // tanpa promo jika error
+                        _buyDirect(post, quantity, bestPromo: null);
                       },
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
                       child: const Text('Beli Sekarang'),
@@ -780,30 +901,48 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
 
 
-  // ✅ TOGGLE LIKE DENGAN PERBAIKAN (TIDAK DOUBLE INCREMENT)
+  // ✅ PERBAIKAN: Toggle like dengan update likesCount di document post
   Future<void> _toggleLike(post) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Anda harus login untuk memberikan like'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
       final postRef = FirebaseFirestore.instance.collection('posts').doc(post.id);
       final likesRef = postRef.collection('likes').doc(user.uid);
 
-      // ✅ CEK STATUS LIKE SAAT INI
+      // ✅ PERBAIKAN: Gunakan batch untuk atomic operation
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Cek status like saat ini
       final likeDoc = await likesRef.get();
 
       if (likeDoc.exists) {
-        // Unlike - hapus like
-        await likesRef.delete();
+        // Unlike - hapus like dan kurangi count
+        batch.delete(likesRef);
+        batch.update(postRef, {
+          'likesCount': FieldValue.increment(-1),
+        });
       } else {
-        // Like - tambah like
-        await likesRef.set({
+        // Like - tambah like dan tambah count
+        batch.set(likesRef, {
           'userId': user.uid,
+          'username': user.displayName ?? 'Anonymous',
           'createdAt': FieldValue.serverTimestamp(),
         });
+        batch.update(postRef, {
+          'likesCount': FieldValue.increment(1),
+        });
       }
+      await batch.commit();
 
-      // ✅ TIDAK PERLU UPDATE POST PROVIDER KARENA SUDAH MENGGUNAKAN STREAM
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -813,6 +952,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
     }
   }
+
+
 
   void _addToCartWithQuantity(post, int quantity) {
     final cartItem = CartItem(
@@ -1147,6 +1288,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     );
   }
 
+  // ✅ PERBAIKAN: Post comment dengan update commentsCount
   Future<void> _postComment() async {
     if (_commentController.text.trim().isEmpty) return;
 
@@ -1169,16 +1311,27 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
 
       final username = userDoc.data()?['username'] ?? user.displayName ?? 'User';
 
-      await FirebaseFirestore.instance
-          .collection('posts')
-          .doc(widget.postId)
-          .collection('comments')
-          .add({
+      final postRef = FirebaseFirestore.instance.collection('posts').doc(widget.postId);
+      final commentsRef = postRef.collection('comments');
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Tambah comment baru
+      final newCommentRef = commentsRef.doc();
+      batch.set(newCommentRef, {
         'text': _commentController.text.trim(),
         'username': username,
         'userId': user.uid,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      // Update commentsCount di document post
+      batch.update(postRef, {
+        'commentsCount': FieldValue.increment(1),
+      });
+
+      // Commit semua perubahan sekaligus
+      await batch.commit();
 
       _commentController.clear();
 
@@ -1197,6 +1350,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       );
     }
   }
+
 
   String _getPostTypeText(dynamic postType) {
     if (postType == null) return 'UNKNOWN';

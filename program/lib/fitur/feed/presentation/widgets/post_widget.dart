@@ -77,13 +77,39 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
       padding: const EdgeInsets.all(12.0),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: Colors.blueGrey,
-            child: Text(
-              post.username.isNotEmpty ? post.username[0].toUpperCase() : '?',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-            ),
+          // ✅ PERBAIKAN: StreamBuilder untuk profile image di post_widget
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(post.userId)
+                .snapshots(),
+            builder: (context, snapshot) {
+              String? profileImageUrl;
+
+              if (snapshot.hasData && snapshot.data!.exists) {
+                final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                profileImageUrl = userData?['profileImageUrl'] as String?;
+              }
+
+              return CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.blueGrey,
+                backgroundImage: (profileImageUrl?.isNotEmpty == true)
+                    ? CachedNetworkImageProvider(
+                    _optimizeCloudinaryUrl(profileImageUrl!, width: 80)
+                )
+                    : null,
+                child: (profileImageUrl?.isNotEmpty != true)
+                    ? Text(
+                  post.username.isNotEmpty ? post.username[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white
+                  ),
+                )
+                    : null,
+              );
+            },
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -149,6 +175,7 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
       ),
     );
   }
+
 
   void _handleMenuAction(String action, Post post) {
     switch (action) {
@@ -474,29 +501,74 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
         children: [
           Row(
             children: [
-              InkWell(
-                onTap: () => ref.read(postNotifierProvider.notifier).toggleLike(post.id),
-                child: Row(
-                  children: [
-                    Icon(
-                      post.isLiked ? Icons.favorite : Icons.favorite_border,
-                      color: post.isLiked ? Colors.red : Colors.grey,
-                    ),
-                    const SizedBox(width: 4),
-                    Text('${post.likesCount}'),
-                  ],
-                ),
+              // ✅ PERBAIKAN: Gunakan StreamBuilder untuk real-time like status
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(post.id)
+                    .snapshots(),
+                builder: (context, postSnapshot) {
+                  // Ambil data post terbaru
+                  int likesCount = post.likesCount; // Default dari entity
+                  if (postSnapshot.hasData && postSnapshot.data!.exists) {
+                    final postData = postSnapshot.data!.data() as Map<String, dynamic>?;
+                    likesCount = postData?['likesCount'] ?? post.likesCount;
+                  }
+
+                  // Cek status like user saat ini
+                  return StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('posts')
+                        .doc(post.id)
+                        .collection('likes')
+                        .doc(FirebaseAuth.instance.currentUser?.uid ?? '')
+                        .snapshots(),
+                    builder: (context, likeSnapshot) {
+                      final isLiked = likeSnapshot.hasData && likeSnapshot.data!.exists;
+
+                      return InkWell(
+                        onTap: () => _toggleLike(post.id),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isLiked ? Icons.favorite : Icons.favorite_border,
+                              color: isLiked ? Colors.red : Colors.grey,
+                            ),
+                            const SizedBox(width: 4),
+                            Text('$likesCount'),
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
               const SizedBox(width: 16),
-              InkWell(
-                onTap: () => context.push('/post-detail/${post.id}'),
-                child: Row(
-                  children: [
-                    const Icon(Icons.comment_outlined, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text('${post.commentsCount}'),
-                  ],
-                ),
+
+              // ✅ PERBAIKAN: Comments count dari document post
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('posts')
+                    .doc(post.id)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  int commentsCount = post.commentsCount; // Default dari entity
+                  if (snapshot.hasData && snapshot.data!.exists) {
+                    final postData = snapshot.data!.data() as Map<String, dynamic>?;
+                    commentsCount = postData?['commentsCount'] ?? post.commentsCount;
+                  }
+
+                  return InkWell(
+                    onTap: () => context.push('/post-detail/${post.id}'),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.comment_outlined, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text('$commentsCount'),
+                      ],
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 16),
               if (post.type == PostType.jastip || post.type == PostType.short)
@@ -535,6 +607,39 @@ class _PostWidgetState extends ConsumerState<PostWidget> {
       ),
     );
   }
+
+// ✅ TAMBAHAN: Method untuk toggle like di post_widget
+  Future<void> _toggleLike(String postId) async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final postRef = FirebaseFirestore.instance.collection('posts').doc(postId);
+      final likesRef = postRef.collection('likes').doc(user.uid);
+
+      final batch = FirebaseFirestore.instance.batch();
+      final likeDoc = await likesRef.get();
+
+      if (likeDoc.exists) {
+        // Unlike
+        batch.delete(likesRef);
+        batch.update(postRef, {'likesCount': FieldValue.increment(-1)});
+      } else {
+        // Like
+        batch.set(likesRef, {
+          'userId': user.uid,
+          'username': user.displayName ?? 'Anonymous',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        batch.update(postRef, {'likesCount': FieldValue.increment(1)});
+      }
+
+      await batch.commit();
+    } catch (e) {
+      print('Error toggling like: $e');
+    }
+  }
+
 
   Widget _buildRequestActionButton(BuildContext context, Post post) {
     final isExpired = post.isActive;

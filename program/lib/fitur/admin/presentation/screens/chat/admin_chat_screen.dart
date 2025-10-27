@@ -79,7 +79,66 @@ class _AdminChatScreenState extends ConsumerState<AdminChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Chat: ${widget.otherName}')),
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            StreamBuilder<DocumentSnapshot>(
+              stream: ref.read(firebaseFirestoreProvider)
+                  .collection('chats').doc(widget.roomId).snapshots(),
+              builder: (context, roomSnap) {
+                String? otherId;
+                if (roomSnap.hasData && roomSnap.data!.exists) {
+                  final data = roomSnap.data!.data() as Map<String, dynamic>?;
+                  final users = List<String>.from(data?['users'] ?? []);
+                  final adminId = FirebaseAuth.instance.currentUser?.uid;
+                  otherId = users.firstWhere(
+                          (u) => u != adminId, orElse: () => '');
+                }
+                if (otherId == null || otherId.isEmpty) {
+                  return const CircleAvatar(child: Icon(Icons.person));
+                }
+                return StreamBuilder<DocumentSnapshot>(
+                  stream: ref.read(firebaseFirestoreProvider)
+                      .collection('users').doc(otherId).snapshots(),
+                  builder: (context, userSnap) {
+                    String? url;
+                    String name = widget.otherName;
+                    if (userSnap.hasData && userSnap.data!.exists) {
+                      final u = userSnap.data!.data() as Map<String, dynamic>?;
+                      url = u?['profileImageUrl'] as String?;
+                      name = u?['username']?.toString() ?? name;
+                    }
+                    return Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.blueGrey,
+                          backgroundImage: (url != null && url.isNotEmpty)
+                              ? NetworkImage(url)
+                              : null,
+                          child: (url == null || url.isEmpty)
+                              ? Text(
+                            name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                              : null,
+                        ),
+                        const SizedBox(width: 12),
+                        Text('Chat: $name',
+                            style: const TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+      ),
       body: Column(
         children: [
           Expanded(

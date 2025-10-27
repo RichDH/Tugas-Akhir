@@ -204,22 +204,45 @@ class StoriesListWidget extends ConsumerWidget {
                           width: 2,
                         ),
                       ),
-                      child: CircleAvatar(
-                        radius: 28,
-                        backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
-                            ? CachedNetworkImageProvider(profileImageUrl)
-                            : null,
-                        backgroundColor: Colors.grey[300],
-                        child: profileImageUrl == null || profileImageUrl.isEmpty
-                            ? Text(
-                          username.isNotEmpty ? username[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        )
-                            : null,
+                      child: // ✅ PERBAIKAN: Ganti dengan StreamBuilder untuk real-time updates
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(currentUser.uid) // Ganti dengan variable userId yang sesuai di context Anda
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          String? liveProfileImageUrl;
+                          String liveUsername = username; // fallback ke username yang ada
+
+                          // Ambil data user terbaru dari Firestore
+                          if (snapshot.hasData && snapshot.data!.exists) {
+                            final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                            liveProfileImageUrl = userData?['profileImageUrl'] as String?;
+                            liveUsername = userData?['username']?.toString() ?? username;
+                          } else {
+                            // Fallback ke data yang sudah ada jika Firestore belum load
+                            liveProfileImageUrl = profileImageUrl;
+                          }
+
+                          return CircleAvatar(
+                            radius: 28,
+                            backgroundImage: liveProfileImageUrl != null && liveProfileImageUrl.isNotEmpty
+                                ? CachedNetworkImageProvider(liveProfileImageUrl)
+                                : null,
+                            backgroundColor: Colors.grey[300],
+                            child: liveProfileImageUrl == null || liveProfileImageUrl.isEmpty
+                                ? Text(
+                              liveUsername.isNotEmpty ? liveUsername[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            )
+                                : null,
+                          );
+                        },
                       ),
+
                     ),
                     const SizedBox(height: 4),
                     SizedBox(
@@ -283,24 +306,47 @@ class StoriesListWidget extends ConsumerWidget {
                   width: 2,
                 ),
               ),
-              child: CircleAvatar(
-                radius: 28,
-                backgroundImage: story.profileImageUrl != null && story.profileImageUrl!.isNotEmpty
-                    ? CachedNetworkImageProvider(story.profileImageUrl!)
-                    : null,
-                backgroundColor: Colors.grey[300],
-                child: story.profileImageUrl == null || story.profileImageUrl!.isEmpty
-                    ? Text(
-                  story.username.isNotEmpty
-                      ? story.username[0].toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                )
-                    : null,
+              child: // ✅ PERBAIKAN: Profile picture real-time dengan StreamBuilder
+              StreamBuilder<DocumentSnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(story.userId) // Asumsi story memiliki field userId
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  String? profileImageUrl;
+                  String displayUsername = story.username;
+
+                  // Ambil data user terbaru dari Firestore
+                  if (snapshot.hasData && snapshot.data!.exists) {
+                    final userData = snapshot.data!.data() as Map<String, dynamic>?;
+                    profileImageUrl = userData?['profileImageUrl'] as String?;
+                    displayUsername = userData?['username']?.toString() ?? story.username;
+                  } else {
+                    // Fallback ke data story jika Firestore belum load
+                    profileImageUrl = story.profileImageUrl;
+                  }
+
+                  return CircleAvatar(
+                    radius: 28,
+                    backgroundImage: profileImageUrl != null && profileImageUrl!.isNotEmpty
+                        ? CachedNetworkImageProvider(profileImageUrl!)
+                        : null,
+                    backgroundColor: Colors.grey[300],
+                    child: profileImageUrl == null || profileImageUrl!.isEmpty
+                        ? Text(
+                      displayUsername.isNotEmpty
+                          ? displayUsername[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    )
+                        : null,
+                  );
+                },
               ),
+
             ),
             const SizedBox(height: 4),
             SizedBox(

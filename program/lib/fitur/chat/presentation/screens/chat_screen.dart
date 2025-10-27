@@ -659,7 +659,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.normal,
-              color: Colors.white70,
+              color: Colors.blueAccent,
             ),
           )
               : Text(
@@ -668,7 +668,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             style: const TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.normal,
-              color: Colors.white70,
+              color: Colors.blueAccent,
             ),
           ),
         ),
@@ -690,7 +690,45 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: _buildAppBarTitle(), // ✅ GUNAKAN FUNCTION TERPISAH
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            // Avatar lawan bicara
+            StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(widget.otherUserId)
+                  .snapshots(),
+              builder: (context, snap) {
+                String? url;
+                if (snap.hasData && snap.data!.exists) {
+                  final m = snap.data!.data() as Map<String, dynamic>?;
+                  url = m?['profileImageUrl'] as String?;
+                }
+                return CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.blueGrey,
+                  backgroundImage: (url != null && url.isNotEmpty)
+                      ? NetworkImage(url)
+                      : null,
+                  child: (url == null || url.isEmpty)
+                      ? Text(
+                    widget.otherUsername.isNotEmpty
+                        ? widget.otherUsername[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                      : null,
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: _buildAppBarTitle()),
+          ],
+        ),
         actions: [
           if (_isLoadingPosts)
             const Padding(
@@ -698,10 +736,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
+                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
               ),
             ),
         ],
