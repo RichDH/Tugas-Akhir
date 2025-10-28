@@ -455,10 +455,10 @@ class _UserSearchResults extends ConsumerWidget {
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(
-                backgroundImage: userData['profilePicture'] != null
-                    ? NetworkImage(userData['profilePicture'])
+                backgroundImage: userData['profileImageUrl'] != null
+                    ? NetworkImage(userData['profileImageUrl'])
                     : null,
-                child: userData['profilePicture'] == null
+                child: userData['profileImageUrl'] == null
                     ? Text(userData['username']?[0].toUpperCase() ?? '?')
                     : null,
               ),
