@@ -631,7 +631,8 @@ class _CartScreenState extends ConsumerState<CartScreen> {
   }
 
   // ✅ PROCESS CHECKOUT DENGAN VALIDASI TAMBAHAN (DIPERBAIKI)
-  Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier,dynamic bestPromo) async {
+  // ✅ PROCESS CHECKOUT DENGAN VALIDASI TAMBAHAN (DIPERBAIKI - CLEAR CART ATOMIC)
+  Future<void> _processCheckout(BuildContext context, List cartItems, double totalAmount, cartNotifier, dynamic bestPromo) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -647,7 +648,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       // ✅ VALIDASI ULANG SEBELUM CHECKOUT
       await _validateCartItems();
 
-      // ✅ AMBIL CART ITEMS TERBARU SETELAH VALIDASI (TANPA .future)
+      // ✅ AMBIL CART ITEMS TERBARU SETELAH VALIDASI
       final cartItemsAsyncValue = ref.read(cartProvider);
 
       // Cek jika masih loading
@@ -698,7 +699,6 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       final discount = (bestPromo?.discountAmount ?? 0.0);
       final payable = (validTotalAmount - discount).clamp(0, double.infinity);
 
-
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -706,7 +706,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
 
       final userBalance = (userDoc.data()?['saldo'] as num?)?.toDouble() ?? 0.0;
 
-      if (userBalance < payable ) {
+      if (userBalance < payable) {
         _showInsufficientBalanceDialog(context, validTotalAmount, userBalance);
         return;
       }
@@ -721,12 +721,9 @@ class _CartScreenState extends ConsumerState<CartScreen> {
         'saldo': FieldValue.increment(-payable),
       });
 
-      // ✅ HAPUS SEMUA ITEM DARI CART (dengan null check)
-      for (final item in currentCartItems) {
-        if (item != null && item.id != null) {
-          cartNotifier.removeFromCart(item.id);
-        }
-      }
+      // ✅ PERBAIKAN: GUNAKAN clearCart() UNTUK HAPUS SEMUA ITEM SEKALIGUS
+      // Ini lebih aman dan atomic daripada loop removeFromCart satu per satu
+      await cartNotifier.clearCart();
 
       _showCartCheckoutSuccessDialog(context, validTotalAmount);
 
@@ -739,6 +736,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
       );
     }
   }
+
 
   Future<void> _createCartTransaction(List cartItems, double totalAmount, String userId, {dynamic bestPromo}) async {
     // Group items by seller untuk membuat transaksi per penjual

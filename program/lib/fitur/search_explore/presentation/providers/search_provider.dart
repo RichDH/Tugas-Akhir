@@ -179,23 +179,23 @@ final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
             final filterLocation = filter.location!.toLowerCase();
             if (!postLocation.contains(filterLocation)) {
               passFilter = false;
-              print('❌ Location filter: "${post.location}" tidak mengandung "${filter.location}"');
+              print('Location filter: "${post.location}" tidak mengandung "${filter.location}"');
             }
           }
         }
 
         if (passFilter) {
           posts.add(post);
-          print('✅ Post "${post.title}" lolos semua filter');
+          print('Post "${post.title}" lolos semua filter');
         }
 
       } catch (e) {
-        print('❌ Error parsing post ${doc.id}: $e');
+        print(' Error parsing post ${doc.id}: $e');
         continue;
       }
     }
 
-    print('✅ Filtered posts result: ${posts.length}');
+    print(' Filtered posts result: ${posts.length}');
 
     // Sort berdasarkan relevansi - posts yang cocok dengan keyword di title diprioritaskan
     if (query.isNotEmpty) {
@@ -220,7 +220,7 @@ final postSearchProvider = StreamProvider.autoDispose<List<Post>>((ref) {
 });
 
 
-// ✅ Provider untuk filtered user search yang diperbaiki
+//  Provider untuk filtered user search yang diperbaiki
 final filteredUserSearchProvider = StreamProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, query) {
   final firestore = ref.watch(firebaseFirestoreProvider);
   final filter = ref.watch(searchFilterProvider);
@@ -274,11 +274,10 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
     final targetLocation = locations.first;
     const radiusKm = 50.0;
 
-    // ✅ PERUBAHAN: Query tanpa where clause untuk deleted
     final snapshot = await firestore
         .collection('posts')
-        .orderBy('createdAt', descending: true) // ✅ Ganti ke createdAt
-        .limit(200) // Ambil lebih banyak untuk filtering manual
+        .orderBy('createdAt', descending: true)
+        .limit(200)
         .get();
 
     List<Post> nearbyPosts = [];
@@ -287,7 +286,6 @@ final locationBasedPostSearchProvider = FutureProvider.autoDispose.family<List<P
       try {
         final post = Post.fromFirestore(doc);
 
-        // ✅ Manual filter deleted
         if (post.deleted) continue;
 
         // Check jika ada koordinat dan valid
