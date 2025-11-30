@@ -16,8 +16,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:program/fitur/promo/presentation/providers/admin_promo_provider.dart';
 
 
-
-/// Util untuk optimasi URL Cloudinary
 String _optimizeUrl(String url, {int? width, bool isVideo = false}) {
   try {
     if (!url.contains('res.cloudinary.com') || !url.contains('/upload/')) return url;
@@ -289,7 +287,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                       children: [
                         Icon(
                           isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: isLiked ? Colors.red : Colors.grey[700], // ✅ MERAH JIKA LIKED
+                          color: isLiked ? Colors.red : Colors.grey[700],
                           size: 28,
                         ),
                         const SizedBox(width: 8),

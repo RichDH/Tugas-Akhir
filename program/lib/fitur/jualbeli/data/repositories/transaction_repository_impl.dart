@@ -115,10 +115,8 @@ class TransactionRepositoryImpl implements TransactionRepository {
   @override
   Future<void> completeTransaction(String transactionId, int rating) async {
     try {
-      // Get transaction data first
       final transactionDoc = await _firestore.collection('transactions').doc(transactionId).get();
 
-      // Tambahkan pengecekan jika dokumen tidak ada untuk menghindari error
       if (!transactionDoc.exists) {
         throw Exception('Transaksi dengan ID $transactionId tidak ditemukan.');
       }

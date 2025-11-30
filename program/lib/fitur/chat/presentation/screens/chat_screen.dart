@@ -1,4 +1,4 @@
-// chat_screen.dart - FIXED VERSION dengan semua masalah teratasi
+// chat_screen.dart - FIXED VERSION dengan update status offer
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -89,7 +89,6 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String? postId;
   final bool isOfferMode;
 
-
   const ChatScreen({
     super.key,
     required this.otherUserId,
@@ -104,7 +103,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
-  List<Post> _otherUserRequestPosts = []; // ✅ HANYA REQUEST POSTS
+  List<Post> _otherUserRequestPosts = [];
   bool _isLoadingPosts = false;
   late final String _chatRoomId;
 
@@ -124,7 +123,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return ids.join('_');
   }
 
-  // ✅ FIX 2: Filter hanya post dengan type REQUEST
   Future<void> _loadOtherUserRequestPosts() async {
     setState(() => _isLoadingPosts = true);
     try {
@@ -133,12 +131,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .collection('posts')
           .where('userId', isEqualTo: widget.otherUserId)
           .where('isActive', isEqualTo: true)
-          .where('type', isEqualTo: 'request') // ✅ HANYA POST REQUEST
+          .where('type', isEqualTo: 'request')
           .get();
 
       _otherUserRequestPosts = snapshot.docs
           .map((doc) => Post.fromFirestore(doc))
-          .where((post) => post.type == PostType.request) // ✅ DOUBLE CHECK
+          .where((post) => post.type == PostType.request)
           .toList();
 
       print('Found ${_otherUserRequestPosts.length} request posts for user ${widget.otherUserId}');
@@ -193,8 +191,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  // ✅ FIX 1: Mengatasi document not found dengan verifikasi user terlebih dahulu
-  Future<void> _acceptOffer(String chatRoomId, Map<String, dynamic> offerData) async {
+  // ✅ UPDATED: Update status offer di Firestore
+  Future<void> _updateOfferStatus(String chatRoomId, String messageId, String newStatus) async {
+    try {
+      final firestore = ref.read(firebaseFirestoreProvider);
+      final messageRef = firestore
+          .collection('chats')
+          .doc(chatRoomId)
+          .collection('messages')
+          .doc(messageId);
+
+      await messageRef.update({
+        'offerData.status': newStatus,
+      });
+
+      print('✅ Offer status updated to: $newStatus');
+    } catch (e) {
+      print('❌ Error updating offer status: $e');
+      throw e;
+    }
+  }
+
+  // ✅ UPDATED: Accept offer dengan update status
+  Future<void> _acceptOffer(String chatRoomId, String messageId, Map<String, dynamic> offerData) async {
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
       final currentUser = ref.read(firebaseAuthProvider).currentUser;
@@ -203,7 +222,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         throw Exception('User tidak login');
       }
 
-      // ✅ VERIFIKASI DOKUMEN USER ADA SEBELUM MEMBUAT OFFER
+      // Verifikasi dokumen user
       final currentUserDoc = await firestore.collection('users').doc(currentUser.uid).get();
       if (!currentUserDoc.exists) {
         throw Exception('Data user penerima offer tidak ditemukan. Silakan login ulang.');
@@ -219,7 +238,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         throw Exception('Data user pengirim offer tidak ditemukan');
       }
 
-      // ✅ VERIFIKASI POST ADA
+      // Verifikasi post
       final postId = OfferMessage._safeGetString(offerData, 'postId');
       final postDoc = await firestore.collection('posts').doc(postId).get();
       if (!postDoc.exists) {
@@ -231,19 +250,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       print('- Offerer: $offererUserId');
       print('- Post: $postId');
 
-      // Buat offer object dengan data yang sudah diverifikasi
+      // Buat offer object
       final tempOffer = Offer(
         id: 'chat_offer_${DateTime.now().millisecondsSinceEpoch}',
         postId: postId,
         postTitle: OfferMessage._safeGetString(offerData, 'postTitle'),
         offererId: offererUserId,
         offererUsername: OfferMessage._safeGetString(offerData, 'offererUsername'),
-        postOwnerId: currentUser.uid, // ✅ PENERIMA OFFER SEBAGAI POST OWNER
+        postOwnerId: currentUser.uid,
         offerPrice: OfferMessage._safeGetDouble(offerData, 'offerPrice'),
         createdAt: Timestamp.now(),
       );
 
-      // ✅ BUAT OFFER DI DATABASE TERLEBIH DAHULU
+      // Buat offer di database
       final offerRef = await firestore.collection('offers').add({
         'postId': tempOffer.postId,
         'postTitle': tempOffer.postTitle,
@@ -251,25 +270,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         'offererUsername': tempOffer.offererUsername,
         'postOwnerId': tempOffer.postOwnerId,
         'offerPrice': tempOffer.offerPrice,
-        'status': 'accepted', // ✅ LANGSUNG ACCEPTED KARENA DARI CHAT
+        'status': 'accepted',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // ✅ UPDATE OFFER ID DENGAN DOCUMENT ID YANG BARU DIBUAT
       final updatedOffer = tempOffer.copyWith(id: offerRef.id);
 
-      // ✅ PANGGIL acceptOfferAndCreateTransaction dengan offer ID yang benar
+      // Create transaction
       await ref.read(offerProvider.notifier).acceptOfferAndCreateTransaction(
-        offerId: offerRef.id, // ✅ GUNAKAN ID YANG BENAR
+        offerId: offerRef.id,
         offer: updatedOffer,
         quantity: 1,
       );
+
+      // ✅ UPDATE STATUS OFFER DI CHAT MESSAGE
+      await _updateOfferStatus(chatRoomId, messageId, 'accepted');
 
       // Send acceptance message
       final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
       await chatRoomRef.collection('messages').add({
         'senderId': currentUser.uid,
-        'text': '**Penawaran anda untuk ${offerData['postTitle']} - diterima.**',
+        'text': '✅ Penawaran untuk ${offerData['postTitle']} - diterima.',
         'timestamp': FieldValue.serverTimestamp(),
       });
 
@@ -281,7 +302,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Penawaran berhasil diterima dan transaksi dibuat!'),
+            content: Text('✅ Penawaran berhasil diterima dan transaksi dibuat!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -307,17 +328,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _rejectOffer(String chatRoomId, Map<String, dynamic> offerData) async {
+  // ✅ UPDATED: Reject offer dengan update status
+  Future<void> _rejectOffer(String chatRoomId, String messageId, Map<String, dynamic> offerData) async {
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
       final currentUser = ref.read(firebaseAuthProvider).currentUser;
 
       if (currentUser == null) return;
 
+      // ✅ UPDATE STATUS OFFER DI CHAT MESSAGE
+      await _updateOfferStatus(chatRoomId, messageId, 'rejected');
+
+      // Send rejection message
       final chatRoomRef = firestore.collection('chats').doc(chatRoomId);
       await chatRoomRef.collection('messages').add({
         'senderId': currentUser.uid,
-        'text': '**Penawaran anda untuk ${offerData['postTitle']} - ditolak.**',
+        'text': '❌ Penawaran untuk ${offerData['postTitle']} - ditolak.',
         'timestamp': FieldValue.serverTimestamp(),
       });
 
@@ -328,7 +354,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Penawaran ditolak')),
+          const SnackBar(
+            content: Text('❌ Penawaran ditolak'),
+            backgroundColor: Colors.orange,
+          ),
         );
       }
 
@@ -343,7 +372,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _showOfferDialog(String chatRoomId) {
-    // ✅ CEK REQUEST POSTS, BUKAN SEMUA POSTS
     if (_otherUserRequestPosts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pengguna ini tidak memiliki post request aktif')),
@@ -368,7 +396,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   border: OutlineInputBorder(),
                 ),
                 value: selectedPost,
-                // ✅ GUNAKAN REQUEST POSTS
                 items: _otherUserRequestPosts.map((post) {
                   return DropdownMenuItem<Post>(
                     value: post,
@@ -377,7 +404,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '${post.title}', // ✅ TAMBAH LABEL REQUEST
+                          post.title,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -428,7 +455,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 if (currentUser == null) return;
 
                 try {
-                  // Get current user data
                   final userDoc = await ref.read(firebaseFirestoreProvider)
                       .collection('users')
                       .doc(currentUser.uid)
@@ -468,7 +494,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  // ✅ FIX 3: Widget untuk menampilkan gambar dengan error handling yang lebih baik
   Widget _buildPostImage(String imageUrl) {
     if (imageUrl.isEmpty) {
       return const Icon(Icons.image, color: Colors.grey);
@@ -499,14 +524,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildOfferCard(Map<String, dynamic> offerData, String chatRoomId, bool isFromCurrentUser) {
+  // ✅ UPDATED: Build offer card dengan status badge dan conditional buttons
+  Widget _buildOfferCard(String messageId, Map<String, dynamic> offerData, String chatRoomId, bool isFromCurrentUser) {
     final postTitle = offerData['postTitle']?.toString() ?? 'Produk';
     final category = offerData['category']?.toString();
     final postImageUrl = offerData['postImageUrl']?.toString() ?? '';
     final offerPrice = OfferMessage._safeGetDouble(offerData, 'offerPrice');
     final status = offerData['status']?.toString() ?? 'pending';
 
-    print('Building offer card with image URL: $postImageUrl'); // ✅ DEBUG
+    // ✅ Status badge color dan text
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+
+    switch (status) {
+      case 'accepted':
+        statusColor = Colors.green;
+        statusText = 'DITERIMA';
+        statusIcon = Icons.check_circle;
+        break;
+      case 'rejected':
+        statusColor = Colors.red;
+        statusText = 'DITOLAK';
+        statusIcon = Icons.cancel;
+        break;
+      default:
+        statusColor = Colors.orange;
+        statusText = 'MENUNGGU';
+        statusIcon = Icons.schedule;
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
@@ -516,87 +562,117 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.blue.shade200),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ FIX 3: Post Image dengan loading yang lebih baik
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: Colors.grey.shade300,
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _buildPostImage(postImageUrl), // ✅ GUNAKAN FUNCTION YANG DIPERBAIKI
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Post Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  postTitle,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Post Image
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade300,
                 ),
-                if (category != null && category.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    category,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 4),
-                Text(
-                  'Tawaran: Rp ${offerPrice.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                    fontSize: 13,
-                  ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: _buildPostImage(postImageUrl),
                 ),
-                // Accept/Reject buttons for receiver
-                if (!isFromCurrentUser && status == 'pending') ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: () => _acceptOffer(chatRoomId, offerData),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          minimumSize: Size.zero,
-                        ),
-                        child: const Text('Terima', style: TextStyle(fontSize: 12)),
+              ),
+              const SizedBox(width: 12),
+              // Post Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      postTitle,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () => _rejectOffer(chatRoomId, offerData),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.red,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          minimumSize: Size.zero,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (category != null && category.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        category,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
                         ),
-                        child: const Text('Tolak', style: TextStyle(fontSize: 12)),
                       ),
                     ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Tawaran: Rp ${offerPrice.toStringAsFixed(0)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+
+          // ✅ STATUS BADGE - Tampil di kedua belah pihak
+          Row(
+            children: [
+              Icon(statusIcon, size: 16, color: statusColor),
+              const SizedBox(width: 6),
+              Text(
+                statusText,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: statusColor,
+                ),
+              ),
+            ],
+          ),
+
+          // ✅ TOMBOL ACCEPT/REJECT - Hanya tampil jika pending dan bukan pengirim
+          if (!isFromCurrentUser && status == 'pending') ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _acceptOffer(chatRoomId, messageId, offerData),
+                    icon: const Icon(Icons.check, size: 16),
+                    label: const Text('Terima'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
                   ),
-                ],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _rejectOffer(chatRoomId, messageId, offerData),
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Tolak'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
               ],
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -604,7 +680,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
-    // ✅ FIX: Mark as read sebelum dispose, tanpa ref
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null && mounted) {
       FirebaseFirestore.instance
@@ -620,8 +695,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.dispose();
   }
 
-
-// TAMBAHKAN METHOD INI di dalam class _ChatScreenState
   Future<void> _markChatAsRead(WidgetRef ref, String chatRoomId, String currentUserId) async {
     try {
       final firestore = ref.read(firebaseFirestoreProvider);
@@ -635,7 +708,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       print('Error marking chat as read: $e');
     }
   }
-
 
   Widget _buildAppBarTitle() {
     return Column(
@@ -693,7 +765,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            // Avatar lawan bicara
             StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('users')
@@ -736,7 +807,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: SizedBox(
                 width: 20,
                 height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white)
+                ),
               ),
             ),
         ],
@@ -764,15 +838,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     final message = (data is Map<String, dynamic>) ? data : <String, dynamic>{};
                     final bool isMe = message['senderId']?.toString() == currentUser.uid;
 
-
-
-                    // Handle offer messages
+                    // ✅ UPDATED: Pass messageId untuk update status
                     if (message['messageType']?.toString() == 'offer' && message['offerData'] != null) {
                       final offerData = message['offerData'];
                       if (offerData is Map<String, dynamic>) {
                         return Align(
                           alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                          child: _buildOfferCard(offerData, chatRoomId, isMe),
+                          child: _buildOfferCard(doc.id, offerData, chatRoomId, isMe),
                         );
                       }
                     }
@@ -823,7 +895,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             padding: const EdgeInsets.all(8.0),
             child: Row(
               children: [
-                // Plus button for offers
                 IconButton(
                   icon: const Icon(Icons.add, color: Colors.blue),
                   onPressed: () => _showOfferDialog(chatRoomId),

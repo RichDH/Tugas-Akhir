@@ -936,7 +936,7 @@ class _CartScreenState extends ConsumerState<CartScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              context.push('/topup');
+              context.push('/top-up');
             },
             child: const Text('Top Up'),
           ),

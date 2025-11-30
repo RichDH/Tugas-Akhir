@@ -51,7 +51,6 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-// ✅ TAMBAHAN: Method untuk menyelesaikan transaksi dan mencairkan dana
   Future<void> completeTransactionAndReleaseFunds(String transactionId, int rating) async {
     state = const AsyncLoading();
     try {
@@ -63,7 +62,6 @@ class TransactionNotifier extends StateNotifier<AsyncValue<void>> {
   }
 
 
-  // --- Method untuk mendapatkan ID transaksi ---
   Future<String?> createTransactionAndGetId({
     required String postId,
     required String buyerId,

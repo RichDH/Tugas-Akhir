@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../../../jualbeli/domain/entities/transaction_entity.dart';
 
-// ✅ PERUBAHAN: Menambahkan .autoDispose agar state di-reset otomatis saat logout
 final safeTransactionsByBuyerProvider = StreamProvider.autoDispose.family<List<Transaction>, String>((ref, buyerId) {
   final authState = ref.watch(authStateChangesProvider);
 
